@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  *
- *   Copyright (C) 2011 John Crispin <blogic@openwrt.org>
+ *   Copyright (C) 2011-12 John Crispin <blogic@openwrt.org>
  */
 
 #include <linux/kernel.h>
@@ -20,12 +20,17 @@
 #include <linux/mm.h>
 #include <linux/platform_device.h>
 #include <linux/ethtool.h>
+#include <linux/if_vlan.h>
 #include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/dma-mapping.h>
 #include <linux/module.h>
 #include <linux/property.h>
+#include <linux/clk.h>
+#include <linux/of_net.h>
+#include <linux/of_irq.h>
+#include <linux/of_platform.h>
 
 #include <asm/checksum.h>
 
@@ -33,7 +38,7 @@
 #include <xway_dma.h>
 #include <lantiq_platform.h>
 
-#define LTQ_ETOP_MDIO		0x11804
+#define LTQ_ETOP_MDIO_ACC	0x11804
 #define MDIO_REQUEST		0x80000000
 #define MDIO_READ		0x40000000
 #define MDIO_ADDR_MASK		0x1f
@@ -42,42 +47,96 @@
 #define MDIO_REG_OFFSET		0x10
 #define MDIO_VAL_MASK		0xffff
 
-#define PPE32_CGEN		0x800
-#define LQ_PPE32_ENET_MAC_CFG	0x1840
+#define LTQ_ETOP_MDIO_CFG       0x11800
+#define MDIO_CFG_MASK           0x6
+
+#define LTQ_ETOP_CFG            0x11808
+#define LTQ_ETOP_IGPLEN         0x11820
+#define LTQ_ETOP_MAC_CFG	0x11840
 
 #define LTQ_ETOP_ENETS0		0x11850
 #define LTQ_ETOP_MAC_DA0	0x1186C
 #define LTQ_ETOP_MAC_DA1	0x11870
-#define LTQ_ETOP_CFG		0x16020
-#define LTQ_ETOP_IGPLEN		0x16080
+
+#define MAC_CFG_MASK		0xfff
+#define MAC_CFG_CGEN		BIT(11)
+#define MAC_CFG_DUPLEX		BIT(2)
+#define MAC_CFG_SPEED		BIT(1)
+#define MAC_CFG_LINK		BIT(0)
 
 #define MAX_DMA_CHAN		0x8
 #define MAX_DMA_CRC_LEN		0x4
 #define MAX_DMA_DATA_LEN	0x600
 
 #define ETOP_FTCU		BIT(28)
-#define ETOP_MII_MASK		0xf
-#define ETOP_MII_NORMAL		0xd
-#define ETOP_MII_REVERSE	0xe
 #define ETOP_PLEN_UNDER		0x40
-#define ETOP_CGEN		0x800
+#define ETOP_CFG_MII0		0x01
 
 /* use even channel numbers as RX, odd numbers as TX */
 #define IS_TX(x)		(((x) % 2))
 #define IS_RX(x)		(!((x) % 2))
 
+#define ETOP_CFG_MASK           0xfff
+#define ETOP_CFG_FEN0		BIT(8)
+#define ETOP_CFG_SEN0		BIT(6)
+#define ETOP_CFG_OFF1		BIT(3)
+#define ETOP_CFG_REMII0		BIT(1)
+#define ETOP_CFG_OFF0		BIT(0)
+
+#define LTQ_GBIT_MDIO_CTL	0xCC
+#define LTQ_GBIT_MDIO_DATA	0xd0
+#define LTQ_GBIT_GCTL0		0x68
+#define LTQ_GBIT_PMAC_HD_CTL	0x8c
+#define LTQ_GBIT_P0_CTL		0x4
+#define LTQ_GBIT_PMAC_RX_IPG	0xa8
+#define LTQ_GBIT_RGMII_CTL	0x78
+
+#define PMAC_HD_CTL_AS		BIT(19)
+#define PMAC_HD_CTL_RXSH	BIT(22)
+
+/* Switch Enable (0=disable, 1=enable) */
+#define GCTL0_SE		0x80000000
+/* Disable MDIO auto polling (0=disable, 1=enable) */
+#define PX_CTL_DMDIO		0x00400000
+
+/* MDC clock divider, clock = 25MHz/((MDC_CLOCK + 1) * 2) */
+#define MDC_CLOCK_MASK		0xff000000
+#define MDC_CLOCK_OFFSET	24
+
+/* register information for the gbit's MDIO bus */
+#define MDIO_XR9_REQUEST	0x00008000
+#define MDIO_XR9_READ		0x00000800
+#define MDIO_XR9_WRITE		0x00000400
+#define MDIO_XR9_REG_MASK	0x1f
+#define MDIO_XR9_ADDR_MASK	0x1f
+#define MDIO_XR9_RD_MASK	0xffff
+#define MDIO_XR9_REG_OFFSET	0
+#define MDIO_XR9_ADDR_OFFSET	5
+#define MDIO_XR9_WR_OFFSET	16
+
+#define LTQ_DMA_ETOP	((of_machine_is_compatible("lantiq,ase")) ? \
+			(INT_NUM_IM3_IRL0) : (INT_NUM_IM2_IRL0))
+
+/* the newer xway socks have a embedded 3/7 port gbit multiplexer */
 #define ltq_etop_r32(x)		ltq_r32(ltq_etop_membase + (x))
 #define ltq_etop_w32(x, y)	ltq_w32(x, ltq_etop_membase + (y))
 #define ltq_etop_w32_mask(x, y, z)	\
 		ltq_w32_mask(x, y, ltq_etop_membase + (z))
 
-#define DRV_VERSION	"1.0"
+#define ltq_gbit_r32(x)		ltq_r32(ltq_gbit_membase + (x))
+#define ltq_gbit_w32(x, y)	ltq_w32(x, ltq_gbit_membase + (y))
+#define ltq_gbit_w32_mask(x, y, z)	\
+		ltq_w32_mask(x, y, ltq_gbit_membase + (z))
+
+#define DRV_VERSION	"1.2"
 
 static void __iomem *ltq_etop_membase;
+static void __iomem *ltq_gbit_membase;
 
 struct ltq_etop_chan {
 	int idx;
 	int tx_free;
+	int irq;
 	struct net_device *netdev;
 	struct napi_struct napi;
 	struct ltq_dma_channel dma;
@@ -87,7 +146,6 @@ struct ltq_etop_chan {
 struct ltq_etop_priv {
 	struct net_device *netdev;
 	struct platform_device *pdev;
-	struct ltq_eth_data *pldata;
 	struct resource *res;
 
 	struct mii_bus *mii_bus;
@@ -97,15 +155,26 @@ struct ltq_etop_priv {
 	int tx_burst_len;
 	int rx_burst_len;
 
+	unsigned char mac[6];
+	phy_interface_t mii_mode;
+
 	spinlock_t lock;
+
+	struct clk *clk_ppe;
+	struct clk *clk_switch;
+	struct clk *clk_ephy;
+	struct clk *clk_ephycgu;
 };
+
+static int ltq_etop_mdio_wr(struct mii_bus *bus, int phy_addr,
+			    int phy_reg, u16 phy_data);
 
 static int
 ltq_etop_alloc_skb(struct ltq_etop_chan *ch)
 {
 	struct ltq_etop_priv *priv = netdev_priv(ch->netdev);
 
-	ch->skb[ch->dma.desc] = netdev_alloc_skb(ch->netdev, MAX_DMA_DATA_LEN);
+	ch->skb[ch->dma.desc] = dev_alloc_skb(MAX_DMA_DATA_LEN);
 	if (!ch->skb[ch->dma.desc])
 		return -ENOMEM;
 	ch->dma.desc_base[ch->dma.desc].addr =
@@ -140,8 +209,11 @@ ltq_etop_hw_receive(struct ltq_etop_chan *ch)
 	spin_unlock_irqrestore(&priv->lock, flags);
 
 	skb_put(skb, len);
+	skb->dev = ch->netdev;
 	skb->protocol = eth_type_trans(skb, ch->netdev);
 	netif_receive_skb(skb);
+	ch->netdev->stats.rx_packets++;
+	ch->netdev->stats.rx_bytes += len;
 }
 
 static int
@@ -149,7 +221,9 @@ ltq_etop_poll_rx(struct napi_struct *napi, int budget)
 {
 	struct ltq_etop_chan *ch = container_of(napi,
 				struct ltq_etop_chan, napi);
+	struct ltq_etop_priv *priv = netdev_priv(ch->netdev);
 	int work_done = 0;
+	unsigned long flags;
 
 	while (work_done < budget) {
 		struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
@@ -161,7 +235,9 @@ ltq_etop_poll_rx(struct napi_struct *napi, int budget)
 	}
 	if (work_done < budget) {
 		napi_complete_done(&ch->napi, work_done);
+		spin_lock_irqsave(&priv->lock, flags);
 		ltq_dma_ack_irq(&ch->dma);
+		spin_unlock_irqrestore(&priv->lock, flags);
 	}
 	return work_done;
 }
@@ -173,12 +249,14 @@ ltq_etop_poll_tx(struct napi_struct *napi, int budget)
 		container_of(napi, struct ltq_etop_chan, napi);
 	struct ltq_etop_priv *priv = netdev_priv(ch->netdev);
 	struct netdev_queue *txq =
-		netdev_get_tx_queue(ch->netdev, ch->idx >> 1);
+		netdev_get_tx_queue(ch->netdev, ch->dma.nr >> 1);
 	unsigned long flags;
 
 	spin_lock_irqsave(&priv->lock, flags);
 	while ((ch->dma.desc_base[ch->tx_free].ctl &
 			(LTQ_DMA_OWN | LTQ_DMA_C)) == LTQ_DMA_C) {
+		ch->netdev->stats.tx_packets++;
+		ch->netdev->stats.tx_bytes += ch->skb[ch->tx_free]->len;
 		dev_kfree_skb_any(ch->skb[ch->tx_free]);
 		ch->skb[ch->tx_free] = NULL;
 		memset(&ch->dma.desc_base[ch->tx_free], 0,
@@ -191,7 +269,9 @@ ltq_etop_poll_tx(struct napi_struct *napi, int budget)
 	if (netif_tx_queue_stopped(txq))
 		netif_tx_start_queue(txq);
 	napi_complete(&ch->napi);
+	spin_lock_irqsave(&priv->lock, flags);
 	ltq_dma_ack_irq(&ch->dma);
+	spin_unlock_irqrestore(&priv->lock, flags);
 	return 1;
 }
 
@@ -201,6 +281,7 @@ ltq_etop_dma_irq(int irq, void *ptr)
 	struct ltq_etop_chan *ch = ptr;
 
 	napi_schedule(&ch->napi);
+
 	return IRQ_HANDLED;
 }
 
@@ -228,41 +309,104 @@ ltq_etop_hw_exit(struct net_device *dev)
 	struct ltq_etop_priv *priv = netdev_priv(dev);
 	int i;
 
-	ltq_pmu_disable(PMU_PPE);
+	clk_disable(priv->clk_ppe);
+
+	if (of_machine_is_compatible("lantiq,ar9"))
+		clk_disable(priv->clk_switch);
+
+	if (of_machine_is_compatible("lantiq,ase")) {
+		clk_disable(priv->clk_ephy);
+		clk_disable(priv->clk_ephycgu);
+	}
+
 	for (i = 0; i < MAX_DMA_CHAN; i++)
 		/* TODO: Replace check with better */
 		if (IS_TX(i) || IS_RX(i))
 			ltq_etop_free_channel(dev, &priv->ch[i]);
 }
 
+static void
+ltq_etop_gbit_init(struct net_device *dev)
+{
+	struct ltq_etop_priv *priv = netdev_priv(dev);
+
+	clk_enable(priv->clk_switch);
+
+	/* enable gbit port0 on the SoC */
+	ltq_gbit_w32_mask((1 << 17), (1 << 18), LTQ_GBIT_P0_CTL);
+
+	ltq_gbit_w32_mask(0, GCTL0_SE, LTQ_GBIT_GCTL0);
+	/* disable MDIO auto polling mode */
+	ltq_gbit_w32_mask(0, PX_CTL_DMDIO, LTQ_GBIT_P0_CTL);
+	/* set 1522 packet size */
+	ltq_gbit_w32_mask(0x300, 0, LTQ_GBIT_GCTL0);
+	/* disable pmac & dmac headers */
+	ltq_gbit_w32_mask(PMAC_HD_CTL_AS | PMAC_HD_CTL_RXSH, 0,
+			  LTQ_GBIT_PMAC_HD_CTL);
+	/* Due to traffic halt when burst length 8,
+	 *replace default IPG value with 0x3B
+	 */
+	ltq_gbit_w32(0x3B, LTQ_GBIT_PMAC_RX_IPG);
+	/* set mdc clock to 2.5 MHz */
+	ltq_gbit_w32_mask(MDC_CLOCK_MASK, 4 << MDC_CLOCK_OFFSET,
+			  LTQ_GBIT_RGMII_CTL);
+}
+
 static int
 ltq_etop_hw_init(struct net_device *dev)
 {
 	struct ltq_etop_priv *priv = netdev_priv(dev);
-	int i;
-	int err;
+	phy_interface_t mii_mode = priv->mii_mode;
 
-	ltq_pmu_enable(PMU_PPE);
+	clk_enable(priv->clk_ppe);
 
-	switch (priv->pldata->mii_mode) {
+	if (of_machine_is_compatible("lantiq,ar9")) {
+		ltq_etop_gbit_init(dev);
+		/* force the etops link to the gbit to MII */
+		mii_mode = PHY_INTERFACE_MODE_MII;
+	}
+	ltq_etop_w32_mask(MDIO_CFG_MASK, 0, LTQ_ETOP_MDIO_CFG);
+	ltq_etop_w32_mask(MAC_CFG_MASK, MAC_CFG_CGEN | MAC_CFG_DUPLEX |
+			MAC_CFG_SPEED | MAC_CFG_LINK, LTQ_ETOP_MAC_CFG);
+
+	switch (mii_mode) {
 	case PHY_INTERFACE_MODE_RMII:
-		ltq_etop_w32_mask(ETOP_MII_MASK, ETOP_MII_REVERSE,
-				  LTQ_ETOP_CFG);
+		ltq_etop_w32_mask(ETOP_CFG_MASK, ETOP_CFG_REMII0 | ETOP_CFG_OFF1 |
+			ETOP_CFG_SEN0 | ETOP_CFG_FEN0, LTQ_ETOP_CFG);
 		break;
 
 	case PHY_INTERFACE_MODE_MII:
-		ltq_etop_w32_mask(ETOP_MII_MASK, ETOP_MII_NORMAL,
-				  LTQ_ETOP_CFG);
+		ltq_etop_w32_mask(ETOP_CFG_MASK, ETOP_CFG_OFF1 |
+			ETOP_CFG_SEN0 | ETOP_CFG_FEN0, LTQ_ETOP_CFG);
 		break;
 
 	default:
+		if (of_machine_is_compatible("lantiq,ase")) {
+			clk_enable(priv->clk_ephy);
+			/* disable external MII */
+			ltq_etop_w32_mask(0, ETOP_CFG_MII0, LTQ_ETOP_CFG);
+			/* enable clock for internal PHY */
+			clk_enable(priv->clk_ephycgu);
+			/* we need to write this magic to the internal phy to
+			 * make it work
+			 */
+			ltq_etop_mdio_wr(NULL, 0x8, 0x12, 0xC020);
+			pr_info("Selected EPHY mode\n");
+			break;
+		}
 		netdev_err(dev, "unknown mii mode %d\n",
-			   priv->pldata->mii_mode);
+			   mii_mode);
 		return -ENOTSUPP;
 	}
 
-	/* enable crc generation */
-	ltq_etop_w32(PPE32_CGEN, LQ_PPE32_ENET_MAC_CFG);
+	return 0;
+}
+
+static int
+ltq_etop_dma_init(struct net_device *dev)
+{
+	struct ltq_etop_priv *priv = netdev_priv(dev);
+	int err, i;
 
 	ltq_dma_init_port(DMA_PORT_ETOP, priv->tx_burst_len, priv->rx_burst_len);
 
@@ -322,6 +466,39 @@ static const struct ethtool_ops ltq_etop_ethtool_ops = {
 };
 
 static int
+ltq_etop_mdio_wr_xr9(struct mii_bus *bus, int phy_addr,
+		     int phy_reg, u16 phy_data)
+{
+	u32 val = MDIO_XR9_REQUEST | MDIO_XR9_WRITE |
+		(phy_data << MDIO_XR9_WR_OFFSET) |
+		((phy_addr & MDIO_XR9_ADDR_MASK) << MDIO_XR9_ADDR_OFFSET) |
+		((phy_reg & MDIO_XR9_REG_MASK) << MDIO_XR9_REG_OFFSET);
+
+	while (ltq_gbit_r32(LTQ_GBIT_MDIO_CTL) & MDIO_XR9_REQUEST)
+		;
+	ltq_gbit_w32(val, LTQ_GBIT_MDIO_CTL);
+	while (ltq_gbit_r32(LTQ_GBIT_MDIO_CTL) & MDIO_XR9_REQUEST)
+		;
+	return 0;
+}
+
+static int
+ltq_etop_mdio_rd_xr9(struct mii_bus *bus, int phy_addr, int phy_reg)
+{
+	u32 val = MDIO_XR9_REQUEST | MDIO_XR9_READ |
+		((phy_addr & MDIO_XR9_ADDR_MASK) << MDIO_XR9_ADDR_OFFSET) |
+		((phy_reg & MDIO_XR9_REG_MASK) << MDIO_XR9_REG_OFFSET);
+
+	while (ltq_gbit_r32(LTQ_GBIT_MDIO_CTL) & MDIO_XR9_REQUEST)
+		;
+	ltq_gbit_w32(val, LTQ_GBIT_MDIO_CTL);
+	while (ltq_gbit_r32(LTQ_GBIT_MDIO_CTL) & MDIO_XR9_REQUEST)
+		;
+	val = ltq_gbit_r32(LTQ_GBIT_MDIO_DATA) & MDIO_XR9_RD_MASK;
+	return val;
+}
+
+static int
 ltq_etop_mdio_wr(struct mii_bus *bus, int phy_addr, int phy_reg, u16 phy_data)
 {
 	u32 val = MDIO_REQUEST |
@@ -329,9 +506,9 @@ ltq_etop_mdio_wr(struct mii_bus *bus, int phy_addr, int phy_reg, u16 phy_data)
 		((phy_reg & MDIO_REG_MASK) << MDIO_REG_OFFSET) |
 		phy_data;
 
-	while (ltq_etop_r32(LTQ_ETOP_MDIO) & MDIO_REQUEST)
+	while (ltq_etop_r32(LTQ_ETOP_MDIO_ACC) & MDIO_REQUEST)
 		;
-	ltq_etop_w32(val, LTQ_ETOP_MDIO);
+	ltq_etop_w32(val, LTQ_ETOP_MDIO_ACC);
 	return 0;
 }
 
@@ -342,12 +519,12 @@ ltq_etop_mdio_rd(struct mii_bus *bus, int phy_addr, int phy_reg)
 		((phy_addr & MDIO_ADDR_MASK) << MDIO_ADDR_OFFSET) |
 		((phy_reg & MDIO_REG_MASK) << MDIO_REG_OFFSET);
 
-	while (ltq_etop_r32(LTQ_ETOP_MDIO) & MDIO_REQUEST)
+	while (ltq_etop_r32(LTQ_ETOP_MDIO_ACC) & MDIO_REQUEST)
 		;
-	ltq_etop_w32(val, LTQ_ETOP_MDIO);
-	while (ltq_etop_r32(LTQ_ETOP_MDIO) & MDIO_REQUEST)
+	ltq_etop_w32(val, LTQ_ETOP_MDIO_ACC);
+	while (ltq_etop_r32(LTQ_ETOP_MDIO_ACC) & MDIO_REQUEST)
 		;
-	val = ltq_etop_r32(LTQ_ETOP_MDIO) & MDIO_VAL_MASK;
+	val = ltq_etop_r32(LTQ_ETOP_MDIO_ACC) & MDIO_VAL_MASK;
 	return val;
 }
 
@@ -363,7 +540,10 @@ ltq_etop_mdio_probe(struct net_device *dev)
 	struct ltq_etop_priv *priv = netdev_priv(dev);
 	struct phy_device *phydev;
 
-	phydev = phy_find_first(priv->mii_bus);
+	if (of_machine_is_compatible("lantiq,ase"))
+		phydev = mdiobus_get_phy(priv->mii_bus, 8);
+	else
+		phydev = mdiobus_get_phy(priv->mii_bus, 0);
 
 	if (!phydev) {
 		netdev_err(dev, "no PHY found\n");
@@ -371,14 +551,17 @@ ltq_etop_mdio_probe(struct net_device *dev)
 	}
 
 	phydev = phy_connect(dev, phydev_name(phydev),
-			     &ltq_etop_mdio_link, priv->pldata->mii_mode);
+			     &ltq_etop_mdio_link, priv->mii_mode);
 
 	if (IS_ERR(phydev)) {
 		netdev_err(dev, "Could not attach to PHY\n");
 		return PTR_ERR(phydev);
 	}
 
-	phy_set_max_speed(phydev, SPEED_100);
+	if (of_machine_is_compatible("lantiq,ar9"))
+		phy_set_max_speed(phydev, SPEED_1000);
+	else
+		phy_set_max_speed(phydev, SPEED_100);
 
 	phy_attached_info(phydev);
 
@@ -399,8 +582,13 @@ ltq_etop_mdio_init(struct net_device *dev)
 	}
 
 	priv->mii_bus->priv = dev;
-	priv->mii_bus->read = ltq_etop_mdio_rd;
-	priv->mii_bus->write = ltq_etop_mdio_wr;
+	if (of_machine_is_compatible("lantiq,ar9")) {
+		priv->mii_bus->read = ltq_etop_mdio_rd_xr9;
+		priv->mii_bus->write = ltq_etop_mdio_wr_xr9;
+	} else {
+		priv->mii_bus->read = ltq_etop_mdio_rd;
+		priv->mii_bus->write = ltq_etop_mdio_wr;
+	}
 	priv->mii_bus->name = "ltq_mii";
 	snprintf(priv->mii_bus->id, MII_BUS_ID_SIZE, "%s-%x",
 		 priv->pdev->name, priv->pdev->id);
@@ -437,6 +625,7 @@ static int
 ltq_etop_open(struct net_device *dev)
 {
 	struct ltq_etop_priv *priv = netdev_priv(dev);
+	unsigned long flags;
 	int i;
 
 	for (i = 0; i < MAX_DMA_CHAN; i++) {
@@ -445,11 +634,16 @@ ltq_etop_open(struct net_device *dev)
 		if (ch->dma.irq < 0)
 			continue;
 
+		spin_lock_irqsave(&priv->lock, flags);
 		ltq_dma_open(&ch->dma);
 		ltq_dma_enable_irq(&ch->dma);
+		spin_unlock_irqrestore(&priv->lock, flags);
 		napi_enable(&ch->napi);
 	}
-	phy_start(dev->phydev);
+
+	if (dev->phydev)
+		phy_start(dev->phydev);
+
 	netif_tx_start_all_queues(dev);
 	return 0;
 }
@@ -458,10 +652,13 @@ static int
 ltq_etop_stop(struct net_device *dev)
 {
 	struct ltq_etop_priv *priv = netdev_priv(dev);
+	unsigned long flags;
 	int i;
 
 	netif_tx_stop_all_queues(dev);
-	phy_stop(dev->phydev);
+	if (dev->phydev)
+		phy_stop(dev->phydev);
+
 	for (i = 0; i < MAX_DMA_CHAN; i++) {
 		struct ltq_etop_chan *ch = &priv->ch[i];
 
@@ -469,8 +666,11 @@ ltq_etop_stop(struct net_device *dev)
 			continue;
 
 		napi_disable(&ch->napi);
+		spin_lock_irqsave(&priv->lock, flags);
 		ltq_dma_close(&ch->dma);
+		spin_unlock_irqrestore(&priv->lock, flags);
 	}
+
 	return 0;
 }
 
@@ -482,12 +682,15 @@ ltq_etop_tx(struct sk_buff *skb, struct net_device *dev)
 	struct ltq_etop_priv *priv = netdev_priv(dev);
 	struct ltq_etop_chan *ch = &priv->ch[(queue << 1) | 1];
 	struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
-	int len;
 	unsigned long flags;
 	u32 byte_offset;
+	int len;
 
-	if (skb_put_padto(skb, ETH_ZLEN))
+	if (skb_put_padto(skb, ETH_ZLEN)) {
+		dev->stats.tx_dropped++;
 		return NETDEV_TX_OK;
+	}
+
 	len = skb->len;
 
 	if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) || ch->skb[ch->dma.desc]) {
@@ -524,11 +727,14 @@ ltq_etop_change_mtu(struct net_device *dev, int new_mtu)
 {
 	struct ltq_etop_priv *priv = netdev_priv(dev);
 	unsigned long flags;
+	int max;
 
 	dev->mtu = new_mtu;
 
+	max = ETH_HLEN + VLAN_HLEN + new_mtu + ETH_FCS_LEN;
+
 	spin_lock_irqsave(&priv->lock, flags);
-	ltq_etop_w32((ETOP_PLEN_UNDER << 16) | new_mtu, LTQ_ETOP_IGPLEN);
+	ltq_etop_w32((ETOP_PLEN_UNDER << 16) | max, LTQ_ETOP_IGPLEN);
 	spin_unlock_irqrestore(&priv->lock, flags);
 
 	return 0;
@@ -581,6 +787,9 @@ ltq_etop_init(struct net_device *dev)
 	if (err)
 		goto err_hw;
 	ltq_etop_change_mtu(dev, 1500);
+	err = ltq_etop_dma_init(dev);
+	if (err)
+		goto err_hw;
 
 	memcpy(&mac, &priv->pldata->mac, sizeof(struct sockaddr));
 	if (!is_valid_ether_addr(mac.sa_data)) {
@@ -598,9 +807,10 @@ ltq_etop_init(struct net_device *dev)
 		dev->addr_assign_type = NET_ADDR_RANDOM;
 
 	ltq_etop_set_multicast_list(dev);
-	err = ltq_etop_mdio_init(dev);
-	if (err)
-		goto err_netdev;
+	if (!ltq_etop_mdio_init(dev))
+		dev->ethtool_ops = &ltq_etop_ethtool_ops;
+	else
+		pr_warn("etop: mdio probe failed\n");
 	return 0;
 
 err_netdev:
@@ -618,6 +828,9 @@ ltq_etop_tx_timeout(struct net_device *dev, unsigned int txqueue)
 
 	ltq_etop_hw_exit(dev);
 	err = ltq_etop_hw_init(dev);
+	if (err)
+		goto err_hw;
+	err = ltq_etop_dma_init(dev);
 	if (err)
 		goto err_hw;
 	netif_trans_update(dev);
@@ -643,12 +856,11 @@ static const struct net_device_ops ltq_eth_netdev_ops = {
 	.ndo_tx_timeout = ltq_etop_tx_timeout,
 };
 
-static int __init
-ltq_etop_probe(struct platform_device *pdev)
+static int ltq_etop_probe(struct platform_device *pdev)
 {
 	struct net_device *dev;
 	struct ltq_etop_priv *priv;
-	struct resource *res;
+	struct resource *res, *gbit_res;
 	int err, rxq, txq;
 	int i;
 
@@ -676,18 +888,52 @@ ltq_etop_probe(struct platform_device *pdev)
 		goto err_out;
 	}
 
-	dev = alloc_etherdev_mq(sizeof(struct ltq_etop_priv), 4);
-	if (!dev) {
-		err = -ENOMEM;
-		goto err_out;
+	if (of_machine_is_compatible("lantiq,ar9")) {
+		gbit_res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+		if (!gbit_res) {
+			dev_err(&pdev->dev, "failed to get gbit resource\n");
+			err = -ENOENT;
+			goto err_out;
+		}
+		ltq_gbit_membase = devm_ioremap(&pdev->dev,
+						gbit_res->start, resource_size(gbit_res));
+		if (!ltq_gbit_membase) {
+			dev_err(&pdev->dev, "failed to remap gigabit switch %d\n",
+				pdev->id);
+			err = -ENOMEM;
+			goto err_out;
+		}
 	}
+
+	dev = alloc_etherdev_mq(sizeof(struct ltq_etop_priv), 4);
 	dev->netdev_ops = &ltq_eth_netdev_ops;
-	dev->ethtool_ops = &ltq_etop_ethtool_ops;
 	priv = netdev_priv(dev);
 	priv->res = res;
 	priv->pdev = pdev;
-	priv->pldata = dev_get_platdata(&pdev->dev);
 	priv->netdev = dev;
+	err = of_get_phy_mode(pdev->dev.of_node, &priv->mii_mode);
+	if (err)
+		pr_err("Can't find phy-mode for port\n");
+
+	of_get_mac_address(pdev->dev.of_node, priv->mac);
+
+	priv->clk_ppe = clk_get(&pdev->dev, NULL);
+	if (IS_ERR(priv->clk_ppe))
+		return PTR_ERR(priv->clk_ppe);
+	if (of_machine_is_compatible("lantiq,ar9")) {
+		priv->clk_switch = clk_get(&pdev->dev, "switch");
+		if (IS_ERR(priv->clk_switch))
+			return PTR_ERR(priv->clk_switch);
+	}
+	if (of_machine_is_compatible("lantiq,ase")) {
+		priv->clk_ephy = clk_get(&pdev->dev, "ephy");
+		if (IS_ERR(priv->clk_ephy))
+			return PTR_ERR(priv->clk_ephy);
+		priv->clk_ephycgu = clk_get(&pdev->dev, "ephycgu");
+		if (IS_ERR(priv->clk_ephycgu))
+			return PTR_ERR(priv->clk_ephycgu);
+	}
+
 	spin_lock_init(&priv->lock);
 	SET_NETDEV_DEV(dev, &pdev->dev);
 
@@ -770,31 +1016,22 @@ ltq_etop_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct of_device_id ltq_etop_match[] = {
+	{ .compatible = "lantiq,etop-xway" },
+	{},
+};
+MODULE_DEVICE_TABLE(of, ltq_etop_match);
+
 static struct platform_driver ltq_mii_driver = {
+	.probe = ltq_etop_probe,
 	.remove = ltq_etop_remove,
 	.driver = {
 		.name = "ltq_etop",
+		.of_match_table = ltq_etop_match,
 	},
 };
 
-static int __init
-init_ltq_etop(void)
-{
-	int ret = platform_driver_probe(&ltq_mii_driver, ltq_etop_probe);
-
-	if (ret)
-		pr_err("ltq_etop: Error registering platform driver!");
-	return ret;
-}
-
-static void __exit
-exit_ltq_etop(void)
-{
-	platform_driver_unregister(&ltq_mii_driver);
-}
-
-module_init(init_ltq_etop);
-module_exit(exit_ltq_etop);
+module_platform_driver(ltq_mii_driver);
 
 MODULE_AUTHOR("John Crispin <blogic@openwrt.org>");
 MODULE_DESCRIPTION("Lantiq SoC ETOP");
