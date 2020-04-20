@@ -65,6 +65,9 @@ void __cpuidle r4k_wait_irqoff(void)
 		"	wait			\n"
 		"	.set	pop		\n");
 	local_irq_enable();
+	__asm__(
+	"	.globl __pastwait	\n"
+	"__pastwait:			\n");
 }
 
 /*
