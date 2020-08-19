@@ -24,9 +24,9 @@ static unsigned int ram_clocks[] = {
 /* legacy xway clock */
 #define CGU_SYS			0x10
 
-/* vr9, ar10/grx390 clock */
+/* xRX200, xRX300/xRX330 clock */
 #define CGU_SYS_XRX		0x0c
-#define CGU_IF_CLK_AR10		0x24
+#define CGU_IF_CLK_XRX300	0x24
 
 unsigned long ltq_danube_fpi_hz(void)
 {
@@ -74,16 +74,16 @@ unsigned long ltq_danube_pp32_hz(void)
 	return clk;
 }
 
-unsigned long ltq_ar9_sys_hz(void)
+unsigned long ltq_arx100_sys_hz(void)
 {
 	if (((ltq_cgu_r32(CGU_SYS) >> 3) & 0x3) == 0x2)
 		return CLOCK_393M;
 	return CLOCK_333M;
 }
 
-unsigned long ltq_ar9_fpi_hz(void)
+unsigned long ltq_arx100_fpi_hz(void)
 {
-	unsigned long sys = ltq_ar9_sys_hz();
+	unsigned long sys = ltq_arx100_sys_hz();
 
 	if (ltq_cgu_r32(CGU_SYS) & BIT(0))
 		return sys / 3;
@@ -91,15 +91,15 @@ unsigned long ltq_ar9_fpi_hz(void)
 		return sys / 2;
 }
 
-unsigned long ltq_ar9_cpu_hz(void)
+unsigned long ltq_arx100_cpu_hz(void)
 {
 	if (ltq_cgu_r32(CGU_SYS) & BIT(2))
-		return ltq_ar9_fpi_hz();
+		return ltq_arx100_fpi_hz();
 	else
-		return ltq_ar9_sys_hz();
+		return ltq_arx100_sys_hz();
 }
 
-unsigned long ltq_vr9_cpu_hz(void)
+unsigned long ltq_xrx200_cpu_hz(void)
 {
 	unsigned int cpu_sel;
 	unsigned long clk;
@@ -139,12 +139,12 @@ unsigned long ltq_vr9_cpu_hz(void)
 	return clk;
 }
 
-unsigned long ltq_vr9_fpi_hz(void)
+unsigned long ltq_xrx200_fpi_hz(void)
 {
 	unsigned int ocp_sel, cpu_clk;
 	unsigned long clk;
 
-	cpu_clk = ltq_vr9_cpu_hz();
+	cpu_clk = ltq_xrx200_cpu_hz();
 	ocp_sel = ltq_cgu_r32(CGU_SYS_XRX) & 0x3;
 
 	switch (ocp_sel) {
@@ -172,7 +172,7 @@ unsigned long ltq_vr9_fpi_hz(void)
 	return clk;
 }
 
-unsigned long ltq_vr9_pp32_hz(void)
+unsigned long ltq_xrx200_pp32_hz(void)
 {
 	unsigned int clksys = (ltq_cgu_r32(CGU_SYS) >> 16) & 0x7;
 	unsigned long clk;
@@ -195,7 +195,7 @@ unsigned long ltq_vr9_pp32_hz(void)
 	return clk;
 }
 
-unsigned long ltq_ar10_cpu_hz(void)
+unsigned long ltq_xrx300_cpu_hz(void)
 {
 	unsigned int clksys;
 	int cpu_fs = (ltq_cgu_r32(CGU_SYS_XRX) >> 8) & 0x1;
@@ -225,9 +225,9 @@ unsigned long ltq_ar10_cpu_hz(void)
 	}
 }
 
-unsigned long ltq_ar10_fpi_hz(void)
+unsigned long ltq_xrx300_fpi_hz(void)
 {
-	int freq_fpi = (ltq_cgu_r32(CGU_IF_CLK_AR10) >> 25) & 0xf;
+	int freq_fpi = (ltq_cgu_r32(CGU_IF_CLK_XRX300) >> 25) & 0xf;
 
 	switch (freq_fpi) {
 	case 1:
@@ -244,7 +244,7 @@ unsigned long ltq_ar10_fpi_hz(void)
 	}
 }
 
-unsigned long ltq_ar10_pp32_hz(void)
+unsigned long ltq_xrx300_pp32_hz(void)
 {
 	unsigned int clksys = (ltq_cgu_r32(CGU_SYS) >> 16) & 0x7;
 	unsigned long clk;
@@ -264,7 +264,7 @@ unsigned long ltq_ar10_pp32_hz(void)
 	return clk;
 }
 
-unsigned long ltq_grx390_cpu_hz(void)
+unsigned long ltq_xrx330_cpu_hz(void)
 {
 	unsigned int clksys;
 	int cpu_fs = ((ltq_cgu_r32(CGU_SYS_XRX) >> 9) & 0x3);
@@ -297,7 +297,7 @@ unsigned long ltq_grx390_cpu_hz(void)
 	}
 }
 
-unsigned long ltq_grx390_fpi_hz(void)
+unsigned long ltq_xrx330_fpi_hz(void)
 {
 	/* fpi clock is derived from ddr_clk */
 	unsigned int clksys;
@@ -328,7 +328,7 @@ unsigned long ltq_grx390_fpi_hz(void)
 	}
 }
 
-unsigned long ltq_grx390_pp32_hz(void)
+unsigned long ltq_xrx330_pp32_hz(void)
 {
 	unsigned int clksys = (ltq_cgu_r32(CGU_SYS) >> 16) & 0x7;
 	unsigned long clk;

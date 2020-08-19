@@ -48,12 +48,12 @@
  /* SoC Types */
 #define SOC_TYPE_DANUBE		0x01
 #define SOC_TYPE_TWINPASS	0x02
-#define SOC_TYPE_AR9		0x03
-#define SOC_TYPE_VR9		0x04 /* v1.1 */
-#define SOC_TYPE_VR9_2		0x05 /* v1.2 */
+#define SOC_TYPE_ARX100		0x03
+#define SOC_TYPE_XRX200		0x04 /* v1.1 */
+#define SOC_TYPE_XRX200_2	0x05 /* v1.2 */
 #define SOC_TYPE_AMAZON_SE	0x06
-#define SOC_TYPE_AR10		0x07
-#define SOC_TYPE_GRX390		0x08
+#define SOC_TYPE_XRX300		0x07
+#define SOC_TYPE_XRX330		0x08
 #define SOC_TYPE_VRX220		0x09
 
 /* BOOT_SEL - find what boot media we have */
@@ -94,7 +94,7 @@ extern __iomem void *ltq_cgu_membase;
 #define LTQ_MPS_BASE_ADDR	(KSEG1 + 0x1F107000)
 #define LTQ_MPS_CHIPID		((u32 *)(LTQ_MPS_BASE_ADDR + 0x0344))
 
-/* allow booting xrx200 phys */
+/* allow booting xRX200 phys */
 int xrx200_gphy_boot(struct device *dev, unsigned int id, dma_addr_t dev_addr);
 
 /* request a non-gpio and set the PIO config */

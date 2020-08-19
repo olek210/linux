@@ -19,17 +19,17 @@
 #include "../prom.h"
 
 /* clock control register for legacy */
-#define CGU_IFCCR	0x0018
-#define CGU_IFCCR_VR9	0x0024
+#define CGU_IFCCR		0x0018
+#define CGU_IFCCR_XRX200	0x0024
 /* system clock register for legacy */
-#define CGU_SYS		0x0010
+#define CGU_SYS			0x0010
 /* pci control register */
-#define CGU_PCICR	0x0034
-#define CGU_PCICR_VR9	0x0038
+#define CGU_PCICR		0x0034
+#define CGU_PCICR_XRX200	0x0038
 /* ephy configuration register */
 #define CGU_EPHY	0x10
 
-/* Legacy PMU register for ar9, ase, danube */
+/* Legacy PMU register for ARX100, ase, danube */
 /* power control register */
 #define PMU_PWDCR	0x1C
 /* power status register */
@@ -44,7 +44,7 @@
 #define PWDSR(x) ((x) ? (PMU_PWDSR1) : (PMU_PWDSR))
 
 
-/* PMU register for ar10 and grx390 */
+/* PMU register for xRX300 and xRX330 */
 
 /* First register set */
 #define PMU_CLK_SR	0x20 /* status */
@@ -92,16 +92,16 @@ static u32 pmu_clk_cr_b[] = {
 #define PMU_USB0	BIT(6)
 #define PMU_ASC0	BIT(7)
 #define PMU_EPHY	BIT(7)	/* ase */
-#define PMU_USIF	BIT(7) /* from vr9 until grx390 */
+#define PMU_USIF	BIT(7) /* from xRX200 until xRX330 */
 #define PMU_SPI		BIT(8)
 #define PMU_DFE		BIT(9)
 #define PMU_EBU		BIT(10)
 #define PMU_STP		BIT(11)
 #define PMU_GPT		BIT(12)
-#define PMU_AHBS	BIT(13) /* vr9 */
+#define PMU_AHBS	BIT(13) /* xrx200 */
 #define PMU_FPI		BIT(14)
 #define PMU_AHBM	BIT(15)
-#define PMU_SDIO	BIT(16) /* danube, ar9, vr9 */
+#define PMU_SDIO	BIT(16) /* danube, ARX100, xRX200 */
 #define PMU_ASC1	BIT(17)
 #define PMU_PPE_QSB	BIT(18)
 #define PMU_PPE_SLL01	BIT(19)
@@ -112,17 +112,17 @@ static u32 pmu_clk_cr_b[] = {
 #define PMU_PPE_DP	BIT(23)
 #define PMU_PPE_DPLUS	BIT(24)
 #define PMU_USB1_P	BIT(26)
-#define PMU_GPHY3	BIT(26) /* grx390 */
+#define PMU_GPHY3	BIT(26) /* xRX330 */
 #define PMU_USB1	BIT(27)
 #define PMU_SWITCH	BIT(28)
 #define PMU_PPE_TOP	BIT(29)
-#define PMU_GPHY0	BIT(29) /* ar10, xrx390 */
+#define PMU_GPHY0	BIT(29) /* xRX300, xRX330 */
 #define PMU_GPHY	BIT(30)
-#define PMU_GPHY1	BIT(30) /* ar10, xrx390 */
+#define PMU_GPHY1	BIT(30) /* xRX300, xRX330 */
 #define PMU_PCIE_CLK	BIT(31)
-#define PMU_GPHY2	BIT(31) /* ar10, xrx390 */
+#define PMU_GPHY2	BIT(31) /* xRX300, xRX330 */
 
-#define PMU1_PCIE_PHY	BIT(0)	/* vr9-specific,moved in ar10/grx390 */
+#define PMU1_PCIE_PHY	BIT(0)	/* xRX200-specific,moved in xRX300/xRX330 */
 #define PMU1_PCIE_CTL	BIT(1)
 #define PMU1_PCIE_PDI	BIT(4)
 #define PMU1_PCIE_MSI	BIT(5)
@@ -204,8 +204,8 @@ static int pmu_enable(struct clk *clk)
 {
 	int retry = 1000000;
 
-	if (of_machine_is_compatible("lantiq,ar10")
-	    || of_machine_is_compatible("lantiq,grx390")) {
+	if (of_machine_is_compatible("lantiq,xrx300")
+	    || of_machine_is_compatible("lantiq,xrx330")) {
 		pmu_w32(clk->bits, PWDCR_EN_XRX(clk->module));
 		do {} while (--retry &&
 			     (!(pmu_r32(PWDSR_XRX(clk->module)) & clk->bits)));
@@ -230,8 +230,8 @@ static void pmu_disable(struct clk *clk)
 {
 	int retry = 1000000;
 
-	if (of_machine_is_compatible("lantiq,ar10")
-	    || of_machine_is_compatible("lantiq,grx390")) {
+	if (of_machine_is_compatible("lantiq,xrx300")
+	    || of_machine_is_compatible("lantiq,xrx330")) {
 		pmu_w32(clk->bits, PWDCR_DIS_XRX(clk->module));
 		do {} while (--retry &&
 			     (pmu_r32(PWDSR_XRX(clk->module)) & clk->bits));
@@ -253,8 +253,8 @@ static int pci_enable(struct clk *clk)
 {
 	unsigned int val = ltq_cgu_r32(ifccr);
 	/* set bus clock speed */
-	if (of_machine_is_compatible("lantiq,ar9") ||
-			of_machine_is_compatible("lantiq,vr9")) {
+	if (of_machine_is_compatible("lantiq,arx100") ||
+			of_machine_is_compatible("lantiq,xrx200")) {
 		val &= ~0x1f00000;
 		if (clk->rate == CLOCK_33M)
 			val |= 0xe00000;
@@ -475,9 +475,9 @@ void __init ltq_soc_init(void)
 	clkdev_add_clkout();
 
 	/* add the soc dependent clocks */
-	if (of_machine_is_compatible("lantiq,vr9")) {
-		ifccr = CGU_IFCCR_VR9;
-		pcicr = CGU_PCICR_VR9;
+	if (of_machine_is_compatible("lantiq,xrx200")) {
+		ifccr = CGU_IFCCR_XRX200;
+		pcicr = CGU_PCICR_XRX200;
 	} else {
 		clkdev_add_pmu("1e180000.etop", NULL, 1, 0, PMU_PPE);
 	}
@@ -485,8 +485,8 @@ void __init ltq_soc_init(void)
 	if (!of_machine_is_compatible("lantiq,ase"))
 		clkdev_add_pci();
 
-	if (of_machine_is_compatible("lantiq,grx390") ||
-	    of_machine_is_compatible("lantiq,ar10")) {
+	if (of_machine_is_compatible("lantiq,xrx330") ||
+	    of_machine_is_compatible("lantiq,xrx300")) {
 		clkdev_add_pmu("1e108000.switch", "gphy0", 0, 0, PMU_GPHY0);
 		clkdev_add_pmu("1e108000.switch", "gphy1", 0, 0, PMU_GPHY1);
 		clkdev_add_pmu("1e108000.switch", "gphy2", 0, 0, PMU_GPHY2);
@@ -518,9 +518,9 @@ void __init ltq_soc_init(void)
 		clkdev_add_pmu("1e180000.etop", "ephy", 1, 0, PMU_EPHY);
 		clkdev_add_pmu("1e103000.sdio", NULL, 1, 0, PMU_ASE_SDIO);
 		clkdev_add_pmu("1e116000.mei", "dfe", 1, 0, PMU_DFE);
-	} else if (of_machine_is_compatible("lantiq,grx390")) {
-		clkdev_add_static(ltq_grx390_cpu_hz(), ltq_grx390_fpi_hz(),
-				  ltq_grx390_fpi_hz(), ltq_grx390_pp32_hz());
+	} else if (of_machine_is_compatible("lantiq,xrx330")) {
+		clkdev_add_static(ltq_xrx330_cpu_hz(), ltq_xrx330_fpi_hz(),
+				  ltq_xrx330_fpi_hz(), ltq_xrx330_pp32_hz());
 		clkdev_add_pmu("1e108000.switch", "gphy3", 0, 0, PMU_GPHY3);
 		clkdev_add_pmu("1e101000.usb", "otg", 1, 0, PMU_USB0);
 		clkdev_add_pmu("1e106000.usb", "otg", 1, 0, PMU_USB1);
@@ -532,9 +532,9 @@ void __init ltq_soc_init(void)
 		clkdev_add_pmu("1e10b308.eth", NULL, 0, 0, PMU_SWITCH | PMU_PPE_DP);
 		clkdev_add_pmu("1da00000.usif", "NULL", 1, 0, PMU_USIF);
 		clkdev_add_pmu("1e103100.deu", NULL, 1, 0, PMU_DEU);
-	} else if (of_machine_is_compatible("lantiq,ar10")) {
-		clkdev_add_static(ltq_ar10_cpu_hz(), ltq_ar10_fpi_hz(),
-				  ltq_ar10_fpi_hz(), ltq_ar10_pp32_hz());
+	} else if (of_machine_is_compatible("lantiq,xrx300")) {
+		clkdev_add_static(ltq_xrx300_cpu_hz(), ltq_xrx300_fpi_hz(),
+				  ltq_xrx300_fpi_hz(), ltq_xrx300_pp32_hz());
 		clkdev_add_pmu("1e101000.usb", "otg", 1, 0, PMU_USB0);
 		clkdev_add_pmu("1e106000.usb", "otg", 1, 0, PMU_USB1);
 		clkdev_add_pmu("1e10b308.eth", NULL, 0, 0, PMU_SWITCH |
@@ -543,9 +543,9 @@ void __init ltq_soc_init(void)
 		clkdev_add_pmu("1e103100.deu", NULL, 1, 0, PMU_DEU);
 		clkdev_add_pmu("1e116000.mei", "afe", 1, 2, PMU_ANALOG_DSL_AFE);
 		clkdev_add_pmu("1e116000.mei", "dfe", 1, 0, PMU_DFE);
-	} else if (of_machine_is_compatible("lantiq,vr9")) {
-		clkdev_add_static(ltq_vr9_cpu_hz(), ltq_vr9_fpi_hz(),
-				ltq_vr9_fpi_hz(), ltq_vr9_pp32_hz());
+	} else if (of_machine_is_compatible("lantiq,xrx200")) {
+		clkdev_add_static(ltq_xrx200_cpu_hz(), ltq_xrx200_fpi_hz(),
+				ltq_xrx200_fpi_hz(), ltq_xrx200_pp32_hz());
 		clkdev_add_pmu("1f203018.usb2-phy", "phy", 1, 0, PMU_USB0_P);
 		clkdev_add_pmu("1e101000.usb", "otg", 1, 0, PMU_USB0 | PMU_AHBM);
 		clkdev_add_pmu("1f203034.usb2-phy", "phy", 1, 0, PMU_USB1_P);
@@ -567,9 +567,9 @@ void __init ltq_soc_init(void)
 		clkdev_add_pmu("1e103000.sdio", NULL, 1, 0, PMU_SDIO);
 		clkdev_add_pmu("1e103100.deu", NULL, 1, 0, PMU_DEU);
 		clkdev_add_pmu("1e116000.mei", "dfe", 1, 0, PMU_DFE);
-	} else if (of_machine_is_compatible("lantiq,ar9")) {
-		clkdev_add_static(ltq_ar9_cpu_hz(), ltq_ar9_fpi_hz(),
-				ltq_ar9_fpi_hz(), CLOCK_250M);
+	} else if (of_machine_is_compatible("lantiq,arx100")) {
+		clkdev_add_static(ltq_arx100_cpu_hz(), ltq_arx100_fpi_hz(),
+				ltq_arx100_fpi_hz(), CLOCK_250M);
 		clkdev_add_pmu("1f203018.usb2-phy", "phy", 1, 0, PMU_USB0_P);
 		clkdev_add_pmu("1e101000.usb", "otg", 1, 0, PMU_USB0 | PMU_AHBM);
 		clkdev_add_pmu("1f203034.usb2-phy", "phy", 1, 0, PMU_USB1_P);

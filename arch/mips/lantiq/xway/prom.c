@@ -17,21 +17,21 @@
 #define SOC_DANUBE	"Danube"
 #define SOC_TWINPASS	"Twinpass"
 #define SOC_AMAZON_SE	"Amazon_SE"
-#define SOC_AR9		"AR9"
-#define SOC_GR9		"GRX200"
-#define SOC_VR9		"xRX200"
+#define SOC_ARX100	"ARX100"
+#define SOC_GRX200	"GRX200"
+#define SOC_XRX200	"xRX200"
 #define SOC_VRX220	"xRX220"
-#define SOC_AR10	"xRX300"
-#define SOC_GRX390	"xRX330"
+#define SOC_XRX300	"xRX300"
+#define SOC_XRX330	"xRX330"
 
 #define COMP_DANUBE	"lantiq,danube"
 #define COMP_TWINPASS	"lantiq,twinpass"
 #define COMP_AMAZON_SE	"lantiq,ase"
-#define COMP_AR9	"lantiq,ar9"
-#define COMP_GR9	"lantiq,gr9"
-#define COMP_VR9	"lantiq,vr9"
-#define COMP_AR10	"lantiq,ar10"
-#define COMP_GRX390	"lantiq,grx390"
+#define COMP_ARX100	"lantiq,arx100"
+#define COMP_GRX200	"lantiq,grx200"
+#define COMP_XRX200	"lantiq,xrx200"
+#define COMP_XRX300	"lantiq,xrx300"
+#define COMP_XRX330	"lantiq,xrx330"
 
 #define PART_SHIFT	12
 #define PART_MASK	0x0FFFFFFF
@@ -61,16 +61,16 @@ void __init ltq_soc_detect(struct ltq_soc_info *i)
 	case SOC_ID_ARX168_1:
 	case SOC_ID_ARX168_2:
 	case SOC_ID_ARX182:
-		i->name = SOC_AR9;
-		i->type = SOC_TYPE_AR9;
-		i->compatible = COMP_AR9;
+		i->name = SOC_ARX100;
+		i->type = SOC_TYPE_ARX100;
+		i->compatible = COMP_ARX100;
 		break;
 
 	case SOC_ID_GRX188:
 	case SOC_ID_GRX168:
-		i->name = SOC_GR9;
-		i->type = SOC_TYPE_AR9;
-		i->compatible = COMP_GR9;
+		i->name = SOC_GRX200;
+		i->type = SOC_TYPE_ARX100;
+		i->compatible = COMP_GRX200;
 		break;
 
 	case SOC_ID_AMAZON_SE_1:
@@ -86,36 +86,36 @@ void __init ltq_soc_detect(struct ltq_soc_info *i)
 	case SOC_ID_VRX282:
 	case SOC_ID_VRX268:
 	case SOC_ID_VRX288:
-		i->name = SOC_VR9;
-		i->type = SOC_TYPE_VR9;
-		i->compatible = COMP_VR9;
+		i->name = SOC_XRX200;
+		i->type = SOC_TYPE_XRX200;
+		i->compatible = COMP_XRX200;
 		break;
 
 	case SOC_ID_GRX268:
 	case SOC_ID_GRX288:
-		i->name = SOC_GR9;
-		i->type = SOC_TYPE_VR9;
-		i->compatible = COMP_GR9;
+		i->name = SOC_GRX200;
+		i->type = SOC_TYPE_XRX200;
+		i->compatible = COMP_GRX200;
 		break;
 
 	case SOC_ID_VRX268_2:
 	case SOC_ID_VRX288_2:
-		i->name = SOC_VR9;
-		i->type = SOC_TYPE_VR9_2;
-		i->compatible = COMP_VR9;
+		i->name = SOC_XRX200;
+		i->type = SOC_TYPE_XRX200_2;
+		i->compatible = COMP_XRX200;
 		break;
 
 	case SOC_ID_VRX220:
 		i->name = SOC_VRX220;
 		i->type = SOC_TYPE_VRX220;
-		i->compatible = COMP_VR9;
+		i->compatible = COMP_XRX200;
 		break;
 
 	case SOC_ID_GRX282_2:
 	case SOC_ID_GRX288_2:
-		i->name = SOC_GR9;
-		i->type = SOC_TYPE_VR9_2;
-		i->compatible = COMP_GR9;
+		i->name = SOC_GRX200;
+		i->type = SOC_TYPE_XRX200_2;
+		i->compatible = COMP_GRX200;
 		break;
 
 	case SOC_ID_ARX362:
@@ -123,18 +123,18 @@ void __init ltq_soc_detect(struct ltq_soc_info *i)
 	case SOC_ID_ARX382:
 	case SOC_ID_ARX388:
 	case SOC_ID_URX388:
-		i->name = SOC_AR10;
-		i->type = SOC_TYPE_AR10;
-		i->compatible = COMP_AR10;
+		i->name = SOC_XRX300;
+		i->type = SOC_TYPE_XRX300;
+		i->compatible = COMP_XRX300;
 		break;
 
 	case SOC_ID_GRX383:
 	case SOC_ID_GRX369:
 	case SOC_ID_GRX387:
 	case SOC_ID_GRX389:
-		i->name = SOC_GRX390;
-		i->type = SOC_TYPE_GRX390;
-		i->compatible = COMP_GRX390;
+		i->name = SOC_XRX330;
+		i->type = SOC_TYPE_XRX330;
+		i->compatible = COMP_XRX330;
 		break;
 
 	default:

@@ -76,19 +76,19 @@ extern unsigned long ltq_danube_cpu_hz(void);
 extern unsigned long ltq_danube_fpi_hz(void);
 extern unsigned long ltq_danube_pp32_hz(void);
 
-extern unsigned long ltq_ar9_cpu_hz(void);
-extern unsigned long ltq_ar9_fpi_hz(void);
+extern unsigned long ltq_arx100_cpu_hz(void);
+extern unsigned long ltq_arx100_fpi_hz(void);
 
-extern unsigned long ltq_vr9_cpu_hz(void);
-extern unsigned long ltq_vr9_fpi_hz(void);
-extern unsigned long ltq_vr9_pp32_hz(void);
+extern unsigned long ltq_xrx200_cpu_hz(void);
+extern unsigned long ltq_xrx200_fpi_hz(void);
+extern unsigned long ltq_xrx200_pp32_hz(void);
 
-extern unsigned long ltq_ar10_cpu_hz(void);
-extern unsigned long ltq_ar10_fpi_hz(void);
-extern unsigned long ltq_ar10_pp32_hz(void);
+extern unsigned long ltq_xrx300_cpu_hz(void);
+extern unsigned long ltq_xrx300_fpi_hz(void);
+extern unsigned long ltq_xrx300_pp32_hz(void);
 
-extern unsigned long ltq_grx390_cpu_hz(void);
-extern unsigned long ltq_grx390_fpi_hz(void);
-extern unsigned long ltq_grx390_pp32_hz(void);
+extern unsigned long ltq_xrx330_cpu_hz(void);
+extern unsigned long ltq_xrx330_fpi_hz(void);
+extern unsigned long ltq_xrx330_pp32_hz(void);
 
 #endif
