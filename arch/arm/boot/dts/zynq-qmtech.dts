@@ -19,33 +19,34 @@
 
 	memory@0 {
 		device_type = "memory";
-		reg = <0x0 0x40000000>;
+		reg = <0x0 0x20000000>;
 	};
 
 	chosen {
 		bootargs = "";
 		stdout-path = "serial0:115200n8";
 	};
-
+/*
 	gpio-keys {
 		compatible = "gpio-keys";
 		autorepeat;
+
 		sw14 {
 			label = "sw14";
 			gpios = <&gpio0 12 0>;
-			linux,code = <108>; /* down */
+			linux,code = <108>;
 			wakeup-source;
 			autorepeat;
 		};
 		sw13 {
 			label = "sw13";
 			gpios = <&gpio0 14 0>;
-			linux,code = <103>; /* up */
+			linux,code = <103>;
 			wakeup-source;
 			autorepeat;
 		};
 	};
-
+*/
 	leds {
 		compatible = "gpio-leds";
 
@@ -83,11 +84,11 @@
 	status = "okay";
 	phy-mode = "rgmii-id";
 	phy-handle = <&ethernet_phy>;
-	pinctrl-names = "default";
+/*	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_gem0_default>;
-
-	ethernet_phy: ethernet-phy@7 {
-		reg = <7>;
+*/
+	ethernet_phy: ethernet-phy@0 {
+		reg = <0>;
 		device_type = "ethernet-phy";
 	};
 };
@@ -345,12 +346,12 @@
 		};
 
 		conf-rx {
-			pins = "MIO49";
+			pins = "MIO25";
 			bias-high-impedance;
 		};
 
 		conf-tx {
-			pins = "MIO48";
+			pins = "MIO24";
 			bias-disable;
 		};
 	};
@@ -382,8 +383,8 @@
 
 &sdhci0 {
 	status = "okay";
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_sdhci0_default>;
+/*	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_sdhci0_default>;*/
 };
 
 &uart1 {
@@ -393,7 +394,7 @@
 };
 
 &usb0 {
-	status = "okay";
+	status = "disabled";
 	dr_mode = "host";
 	usb-phy = <&usb_phy0>;
 	pinctrl-names = "default";
