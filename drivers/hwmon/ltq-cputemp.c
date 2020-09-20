@@ -18,6 +18,8 @@
 #define CGU_GPHY1_CR   0x0040
 #define CGU_TEMP_PD    BIT(19)
 
+void __iomem *ltq_cgu_membase;
+
 static void ltq_cputemp_enable(void)
 {
 	ltq_cgu_w32(ltq_cgu_r32(CGU_GPHY1_CR) | CGU_TEMP_PD, CGU_GPHY1_CR);
@@ -85,8 +87,14 @@ static const struct hwmon_chip_info ltq_chip_info = {
 
 static int ltq_cputemp_probe(struct platform_device *pdev)
 {
+	struct resource *res;
 	struct device *hwmon_dev;
 	int err = 0;
+
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	ltq_cgu_membase = devm_ioremap_resource(&pdev->dev, res);
+	if (IS_ERR(ltq_cgu_membase))
+		return PTR_ERR(ltq_cgu_membase);
 
 	/* available on vr9 v1.2 SoCs only */
 	if (ltq_soc_type() != SOC_TYPE_VR9_2)
