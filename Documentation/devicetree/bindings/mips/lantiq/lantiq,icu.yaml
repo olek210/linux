@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/mips/lantiq/lantiq,icu.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Lantiq SoCs Interrupt Controller Unit (ICU) devicetree bindings
+
+maintainers:
+  - John Crispin <john@phrozen.org>
+
+properties:
+  compatible:
+    oneOf:
+      - enum:
+          - lantiq,icu
+
+  "#interrupt-cells":
+    const: 1
+
+  interrupt-controller: true
+
+  reg:
+    maxItems: 1
+
+required:
+  - compatible
+  - "#interrupt-cells"
+  - interrupt-controller
+  - reg
+
+additionalProperties: false
+
+examples:
+  - |
+    icu0: icu@80200 {
+        compatible = "lantiq,icu";
+        #interrupt-cells = <1>;
+        interrupt-controller;
+        reg = <0x80200 0xc8>;
+        };
