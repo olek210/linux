@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: GPL-2.0
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/mips/lantiq/eiu.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Lantiq Xway SoC series EIU (EIU)
+
+maintainers:
+  - John Crispin <john@phrozen.org>
+
+properties:
+  compatible:
+    items:
+      - enum:
+          - lantiq,eiu-xway
+
+  reg:
+    maxItems: 1
+
+required:
+  - compatible
+  - reg
+  - interrupt-parent
+  - lantiq,eiu-irqs
+
+additionalProperties: false
+
+examples:
+  - |
+    eiu@101000 {
+        #interrupt-cells = <1>;
+        interrupt-controller;
+        compatible = "lantiq,eiu-xway";
+        reg = <0x101000 0x1000>;
+        interrupt-parent = <&icu0>;
+        lantiq,eiu-irqs = <166 135 66 40 41 42>;
+	};
