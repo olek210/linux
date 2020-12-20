@@ -33,6 +33,7 @@ properties:
       - mips,mips4KEc
       - mips,mips24Kc
       - mips,mips24KEc
+      - mips,mips34Kc
       - mips,mips74Kc
       - mips,mips1004Kc
       - mti,interaptiv
