@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/mips/cpus.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: MIPS bindings for 'cpus' DT nodes
+
+maintainers:
+  - Aleksander Jan Bajkowski <olek2@wp.pl>
+
+description: |
+  This document uses some terminology common to the RISC-V community
+  that is not widely used, the definitions of which are listed here:
+
+properties:
+  compatible:
+    oneOf:
+      - items:
+          - enum:
+              - mips,m14Kc
+              - mips,mips4Kc
+              - mips,mips4KEc
+              - mips,mips24Kc
+              - mips,mips24KEc
+              - mips,mips34Kc
+              - mips,mips74Kc
+              - mips,mips1004Kc
+              - mips,mips1074Kc
+              - mti,microaptiv
+              - mti,interaptiv
+              - mti,proaptiv
+              - mti,i6400
+              - mti,i6500
+              - mti,i7200
+              - mti,m5100
+              - mti,m5150
+              - mti,m6200
+              - mti,m6250
+              - mti,p5600
+              - mti,p6600
+          - const: mips
+
+additionalProperties: true
+
+examples:
+  - |
+    cpus {
+        #address-cells = <1>;
+        #size-cells = <0>;
+        cpu@0 {
+                device_type = "cpu";
+                compatible = "mips,mips34Kc";
+                reg = <0>;
+        };
+    };
