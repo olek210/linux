@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/mips/lantiq/lantiq,vmmc.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Lantiq Xway SoC series Voice MIPS Macro Core (VMMC)
+
+maintainers:
+  - John Crispin <john@phrozen.org>
+
+properties:
+  compatible:
+    items:
+      - enum:
+          - lantiq,vmmc-xway
+
+  reg:
+    maxItems: 1
+
+required:
+  - compatible
+  - reg
+
+additionalProperties: false
+
+examples:
+  - |
+    vmmc@107000 {
+        compatible = "lantiq,vmmc-xway";
+        reg = <0x107000 0x300>;
+        interrupt-parent = <&icu0>;
+        interrupts = <150 151 152 153 154 155>;
+        gpios = <&gpio 30 GPIO_ACTIVE_HIGH  //fxs relay
+                 &gpio 31 GPIO_ACTIVE_HIGH  //still unknown
+                 &gpio 3  GPIO_ACTIVE_HIGH>; //reset_slic?
+
+    };
