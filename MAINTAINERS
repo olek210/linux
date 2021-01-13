@@ -9953,6 +9953,7 @@ LANTIQ MIPS ARCHITECTURE
 M:	John Crispin <john@phrozen.org>
 L:	linux-mips@vger.kernel.org
 S:	Maintained
+F:	Documentation/devicetree/bindings/mips/lantiq/
 F:	arch/mips/lantiq
 F:	drivers/soc/lantiq
 
