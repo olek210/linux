@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/mips/loongson/devices.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Lantiq based Platforms Device Tree Bindings
+
+maintainers:
+  - Aleksander Jan Bajkowski <olek2@wp.pl>
+description: |
+  Devices with a Loongson CPU shall have the following properties.
+
+properties:
+  $nodename:
+    const: '/'
+  compatible:
+    oneOf:
+
+      - description: D-Link DWR966
+        items:
+          - const: dlink,dwr966
+
+additionalProperties: true
+
+...
