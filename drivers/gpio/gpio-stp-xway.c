@@ -196,15 +196,15 @@ static void xway_stp_hw_init(struct xway_stp *chip)
 			chip->phy2 << XWAY_STP_PHY2_SHIFT,
 			XWAY_STP_CON1);
 
-	if (of_machine_is_compatible("lantiq,grx390")
-	    || of_machine_is_compatible("lantiq,ar10")) {
+	if (of_machine_is_compatible("lantiq,xrx330")
+	    || of_machine_is_compatible("lantiq,xrx300")) {
 		xway_stp_w32_mask(chip->virt,
 				XWAY_STP_PHY_MASK << XWAY_STP_PHY3_SHIFT,
 				chip->phy3 << XWAY_STP_PHY3_SHIFT,
 				XWAY_STP_CON1);
 	}
 
-	if (of_machine_is_compatible("lantiq,grx390")) {
+	if (of_machine_is_compatible("lantiq,xrx330")) {
 		xway_stp_w32_mask(chip->virt,
 				XWAY_STP_PHY_MASK << XWAY_STP_PHY4_SHIFT,
 				chip->phy4 << XWAY_STP_PHY4_SHIFT,
@@ -269,24 +269,24 @@ static int xway_stp_probe(struct platform_device *pdev)
 		chip->dsl = dsl & XWAY_STP_ADSL_MASK;
 
 	/* find out which gpios are controlled by the phys */
-	if (of_machine_is_compatible("lantiq,ar9") ||
-			of_machine_is_compatible("lantiq,gr9") ||
-			of_machine_is_compatible("lantiq,vr9") ||
-			of_machine_is_compatible("lantiq,ar10") ||
-			of_machine_is_compatible("lantiq,grx390")) {
+	if (of_machine_is_compatible("lantiq,arx100") ||
+			of_machine_is_compatible("lantiq,grx200") ||
+			of_machine_is_compatible("lantiq,xrx200") ||
+			of_machine_is_compatible("lantiq,xrx300") ||
+			of_machine_is_compatible("lantiq,grx330")) {
 		if (!of_property_read_u32(pdev->dev.of_node, "lantiq,phy1", &phy))
 			chip->phy1 = phy & XWAY_STP_PHY_MASK;
 		if (!of_property_read_u32(pdev->dev.of_node, "lantiq,phy2", &phy))
 			chip->phy2 = phy & XWAY_STP_PHY_MASK;
 	}
 
-	if (of_machine_is_compatible("lantiq,ar10") ||
-			of_machine_is_compatible("lantiq,grx390")) {
+	if (of_machine_is_compatible("lantiq,xrx300") ||
+			of_machine_is_compatible("lantiq,grx330")) {
 		if (!of_property_read_u32(pdev->dev.of_node, "lantiq,phy3", &phy))
 			chip->phy3 = phy & XWAY_STP_PHY_MASK;
 	}
 
-	if (of_machine_is_compatible("lantiq,grx390")) {
+	if (of_machine_is_compatible("lantiq,grx330")) {
 		if (!of_property_read_u32(pdev->dev.of_node, "lantiq,phy4", &phy))
 			chip->phy4 = phy & XWAY_STP_PHY_MASK;
 	}
