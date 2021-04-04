@@ -22,7 +22,9 @@
 /* DMA */
 #define XRX200_DMA_DATA_LEN	0x600
 #define XRX200_DMA_RX		0
-#define XRX200_DMA_TX		1
+#define XRX200_DMA_RX_MAX_QUEUES	1
+#define XRX200_DMA_TXn(n)	(2 * (n) + 1)
+#define XRX200_DMA_TX_MAX_QUEUES	4
 
 /* cpu port mac */
 #define PMAC_RX_IPG		0x0024
@@ -65,7 +67,7 @@ struct xrx200_chan {
 struct xrx200_priv {
 	struct clk *clk;
 
-	struct xrx200_chan chan_tx;
+	struct xrx200_chan chan_tx[XRX200_DMA_TX_MAX_QUEUES];
 	struct xrx200_chan chan_rx;
 
 	struct net_device *net_dev;
@@ -112,16 +114,23 @@ static void xrx200_flush_dma(struct xrx200_chan *ch)
 	}
 }
 
+static void xrx200_open_dma_chan(struct xrx200_chan *chan)
+{
+	napi_enable(&chan->napi);
+	ltq_dma_open(&chan->dma);
+}
+
 static int xrx200_open(struct net_device *net_dev)
 {
 	struct xrx200_priv *priv = netdev_priv(net_dev);
+	int i;
 
-	napi_enable(&priv->chan_tx.napi);
-	ltq_dma_open(&priv->chan_tx.dma);
-	ltq_dma_enable_irq(&priv->chan_tx.dma);
+	for (i = 0; i < net_dev->real_num_tx_queues; i++) {
+		xrx200_open_dma_chan(&priv->chan_tx[i]);
+		ltq_dma_enable_irq(&priv->chan_tx[i].dma);
+	}
 
-	napi_enable(&priv->chan_rx.napi);
-	ltq_dma_open(&priv->chan_rx.dma);
+	xrx200_open_dma_chan(&priv->chan_rx);
 	/* The boot loader does not always deactivate the receiving of frames
 	 * on the ports and then some packets queue up in the PPE buffers.
 	 * They already passed the PMAC so they do not have the tags
@@ -132,22 +141,28 @@ static int xrx200_open(struct net_device *net_dev)
 	xrx200_flush_dma(&priv->chan_rx);
 	ltq_dma_enable_irq(&priv->chan_rx.dma);
 
-	netif_wake_queue(net_dev);
+	netif_tx_start_all_queues(net_dev);
 
 	return 0;
+}
+
+static void xrx200_dma_close(struct xrx200_chan *chan)
+{
+	napi_disable(&chan->napi);
+	ltq_dma_close(&chan->dma);
 }
 
 static int xrx200_close(struct net_device *net_dev)
 {
 	struct xrx200_priv *priv = netdev_priv(net_dev);
+	int i;
 
-	netif_stop_queue(net_dev);
+	netif_tx_stop_all_queues(net_dev);
 
-	napi_disable(&priv->chan_rx.napi);
-	ltq_dma_close(&priv->chan_rx.dma);
+	xrx200_dma_close(&priv->chan_rx);
 
-	napi_disable(&priv->chan_tx.napi);
-	ltq_dma_close(&priv->chan_tx.dma);
+	for (i = 0; i < net_dev->real_num_tx_queues; i++)
+		xrx200_dma_close(&priv->chan_tx[i]);
 
 	return 0;
 }
@@ -247,10 +262,12 @@ static int xrx200_tx_housekeeping(struct napi_struct *napi, int budget)
 	struct xrx200_chan *ch = container_of(napi,
 				struct xrx200_chan, napi);
 	struct net_device *net_dev = ch->priv->net_dev;
+	struct netdev_queue *txq =
+		netdev_get_tx_queue(net_dev, ch->dma.nr >> 1);
 	int pkts = 0;
 	int bytes = 0;
 
-	netif_tx_lock(net_dev);
+	__netif_tx_lock(txq, smp_processor_id());
 	while (pkts < budget) {
 		struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->tx_free];
 
@@ -272,11 +289,11 @@ static int xrx200_tx_housekeeping(struct napi_struct *napi, int budget)
 
 	net_dev->stats.tx_packets += pkts;
 	net_dev->stats.tx_bytes += bytes;
-	netdev_completed_queue(ch->priv->net_dev, pkts, bytes);
+	netdev_tx_completed_queue(txq, pkts, bytes);
 
-	netif_tx_unlock(net_dev);
-	if (netif_queue_stopped(net_dev))
-		netif_wake_queue(net_dev);
+	__netif_tx_unlock(txq);
+	if (netif_tx_queue_stopped(txq))
+		netif_tx_wake_queue(txq);
 
 	if (pkts < budget) {
 		if (napi_complete_done(&ch->napi, pkts))
@@ -290,8 +307,10 @@ static netdev_tx_t xrx200_start_xmit(struct sk_buff *skb,
 				     struct net_device *net_dev)
 {
 	struct xrx200_priv *priv = netdev_priv(net_dev);
-	struct xrx200_chan *ch = &priv->chan_tx;
+	u32 queue = skb_get_queue_mapping(skb);
+	struct xrx200_chan *ch = &priv->chan_tx[queue];
 	struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
+	struct netdev_queue *txq = netdev_get_tx_queue(net_dev, queue);
 	u32 byte_offset;
 	dma_addr_t mapping;
 	int len;
@@ -306,7 +325,7 @@ static netdev_tx_t xrx200_start_xmit(struct sk_buff *skb,
 
 	if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) || ch->skb[ch->dma.desc]) {
 		netdev_err(net_dev, "tx ring full\n");
-		netif_stop_queue(net_dev);
+		netif_tx_stop_queue(txq);
 		return NETDEV_TX_BUSY;
 	}
 
@@ -327,9 +346,9 @@ static netdev_tx_t xrx200_start_xmit(struct sk_buff *skb,
 	ch->dma.desc++;
 	ch->dma.desc %= LTQ_DESC_NUM;
 	if (ch->dma.desc == ch->tx_free)
-		netif_stop_queue(net_dev);
+		netif_tx_stop_queue(txq);
 
-	netdev_sent_queue(net_dev, len);
+	netdev_tx_sent_queue(txq, len);
 
 	return NETDEV_TX_OK;
 
@@ -346,6 +365,7 @@ static const struct net_device_ops xrx200_netdev_ops = {
 	.ndo_start_xmit		= xrx200_start_xmit,
 	.ndo_set_mac_address	= eth_mac_addr,
 	.ndo_validate_addr	= eth_validate_addr,
+	.ndo_select_queue	= dev_pick_tx_cpu_id,
 };
 
 static irqreturn_t xrx200_dma_irq(int irq, void *ptr)
@@ -362,10 +382,30 @@ static irqreturn_t xrx200_dma_irq(int irq, void *ptr)
 	return IRQ_HANDLED;
 }
 
+static int xrx200_dma_tx_chan_init(struct xrx200_priv *priv, unsigned int num)
+{
+	struct xrx200_chan *ch_tx = priv->chan_tx;
+	int ret = 0;
+
+	ch_tx[num].dma.nr = XRX200_DMA_TXn(num);
+	ch_tx[num].dma.dev = priv->dev;
+	ch_tx[num].priv = priv;
+
+	ltq_dma_alloc_tx(&ch_tx[num].dma);
+	ret = devm_request_irq(priv->dev, ch_tx[num].dma.irq, xrx200_dma_irq, 0,
+			       priv->net_dev->name, &ch_tx[num]);
+	if (ret) {
+		dev_err(priv->dev, "failed to request TX irq %d\n",
+			ch_tx[num].dma.irq);
+		return ret;
+	}
+
+	return ret;
+}
+
 static int xrx200_dma_init(struct xrx200_priv *priv)
 {
 	struct xrx200_chan *ch_rx = &priv->chan_rx;
-	struct xrx200_chan *ch_tx = &priv->chan_tx;
 	int ret = 0;
 	int i;
 
@@ -384,30 +424,22 @@ static int xrx200_dma_init(struct xrx200_priv *priv)
 	}
 	ch_rx->dma.desc = 0;
 	ret = devm_request_irq(priv->dev, ch_rx->dma.irq, xrx200_dma_irq, 0,
-			       "xrx200_net_rx", &priv->chan_rx);
+			       priv->net_dev->name, &priv->chan_rx);
 	if (ret) {
 		dev_err(priv->dev, "failed to request RX irq %d\n",
 			ch_rx->dma.irq);
 		goto rx_ring_free;
 	}
 
-	ch_tx->dma.nr = XRX200_DMA_TX;
-	ch_tx->dma.dev = priv->dev;
-	ch_tx->priv = priv;
-
-	ltq_dma_alloc_tx(&ch_tx->dma);
-	ret = devm_request_irq(priv->dev, ch_tx->dma.irq, xrx200_dma_irq, 0,
-			       "xrx200_net_tx", &priv->chan_tx);
+	ret = xrx200_dma_tx_chan_init(priv, 0);
 	if (ret) {
-		dev_err(priv->dev, "failed to request TX irq %d\n",
-			ch_tx->dma.irq);
 		goto tx_free;
 	}
 
 	return ret;
 
 tx_free:
-	ltq_dma_free(&ch_tx->dma);
+	ltq_dma_free(&priv->chan_tx[0].dma);
 
 rx_ring_free:
 	/* free the allocated RX ring */
@@ -423,15 +455,75 @@ rx_free:
 
 static void xrx200_hw_cleanup(struct xrx200_priv *priv)
 {
+	struct net_device *net_dev = priv->net_dev;
 	int i;
 
-	ltq_dma_free(&priv->chan_tx.dma);
+	for (i = 0; i < net_dev->real_num_tx_queues; i++)
+		ltq_dma_free(&priv->chan_tx[i].dma);
+
 	ltq_dma_free(&priv->chan_rx.dma);
 
 	/* free the allocated RX ring */
 	for (i = 0; i < LTQ_DESC_NUM; i++)
 		dev_kfree_skb_any(priv->chan_rx.skb[i]);
 }
+
+static void xrx200_get_channels(struct net_device *net_dev,
+				struct ethtool_channels *channel)
+{
+	channel->max_rx = XRX200_DMA_RX_MAX_QUEUES;
+	channel->max_tx = XRX200_DMA_TX_MAX_QUEUES;
+	channel->max_other = 0;
+	channel->max_combined = 0;
+	channel->rx_count = net_dev->real_num_rx_queues;
+	channel->tx_count = net_dev->real_num_tx_queues;
+	channel->other_count = 0;
+	channel->combined_count = 0;
+}
+
+static int xrx200_set_channels(struct net_device *net_dev,
+			       struct ethtool_channels *channel)
+{
+	struct xrx200_priv *priv = netdev_priv(net_dev);
+	struct netdev_queue *queue;
+	int i;
+
+	if (channel->tx_count > net_dev->real_num_tx_queues) {
+		printk(KERN_INFO "%s: enable some queue\n", __func__);
+		for (i = net_dev->real_num_tx_queues; i < channel->tx_count; i++) {
+			printk(KERN_INFO "%s: start queue #%d\n", __func__, i);
+			xrx200_dma_tx_chan_init(priv, i);
+			printk(KERN_INFO "%s: start3\n", __func__);
+			netif_tx_napi_add(net_dev, &priv->chan_tx[i].napi,
+					  xrx200_tx_housekeeping, 32);
+			printk(KERN_INFO "%s: start4\n", __func__);
+			xrx200_open_dma_chan(&priv->chan_tx[i]);
+			printk(KERN_INFO "%s: start5\n", __func__);
+			queue = netdev_get_tx_queue(net_dev, i);
+			printk(KERN_INFO "%s: start6\n", __func__);
+			netif_tx_start_queue(queue);
+		}
+	} else {
+		printk(KERN_INFO "%s: disable some queue\n", __func__);
+		for (i = channel->tx_count; i < net_dev->real_num_tx_queues; i++) {
+			printk(KERN_INFO "%s: stop queue #%d\n", __func__, i);
+			queue = netdev_get_tx_queue(net_dev, i);
+			netif_tx_stop_queue(queue);
+			xrx200_dma_close(&priv->chan_tx[i]);
+			netif_napi_del(&priv->chan_tx[i].napi);
+			ltq_dma_free(&priv->chan_tx[i].dma);
+		}
+	}
+
+	netif_set_real_num_tx_queues(net_dev, channel->tx_count);
+
+	return 0;
+}
+
+static const struct ethtool_ops xrx200_ethtool_ops = {
+	.get_channels		= xrx200_get_channels,
+	.set_channels		= xrx200_set_channels,
+};
 
 static int xrx200_probe(struct platform_device *pdev)
 {
@@ -440,9 +532,11 @@ static int xrx200_probe(struct platform_device *pdev)
 	struct xrx200_priv *priv;
 	struct net_device *net_dev;
 	int err;
+	int i;
 
 	/* alloc the network device */
-	net_dev = devm_alloc_etherdev(dev, sizeof(struct xrx200_priv));
+	net_dev = alloc_etherdev_mqs(sizeof(struct xrx200_priv), XRX200_DMA_TX_MAX_QUEUES,
+				     XRX200_DMA_RX_MAX_QUEUES);
 	if (!net_dev)
 		return -ENOMEM;
 
@@ -450,10 +544,12 @@ static int xrx200_probe(struct platform_device *pdev)
 	priv->net_dev = net_dev;
 	priv->dev = dev;
 
+	net_dev->ethtool_ops = &xrx200_ethtool_ops;
 	net_dev->netdev_ops = &xrx200_netdev_ops;
 	SET_NETDEV_DEV(net_dev, dev);
 	net_dev->min_mtu = ETH_ZLEN;
 	net_dev->max_mtu = XRX200_DMA_DATA_LEN;
+	netif_set_real_num_tx_queues(net_dev, 1);
 
 	/* load the memory ranges */
 	priv->pmac_reg = devm_platform_get_and_ioremap_resource(pdev, 0, NULL);
@@ -463,9 +559,15 @@ static int xrx200_probe(struct platform_device *pdev)
 	priv->chan_rx.dma.irq = platform_get_irq_byname(pdev, "rx");
 	if (priv->chan_rx.dma.irq < 0)
 		return -ENOENT;
-	priv->chan_tx.dma.irq = platform_get_irq_byname(pdev, "tx");
-	if (priv->chan_tx.dma.irq < 0)
-		return -ENOENT;
+
+	for (i = 0; i < XRX200_DMA_TX_MAX_QUEUES; i++) {
+		char buffer[4];
+
+		snprintf(buffer, sizeof(buffer), "tx%d", i);
+		priv->chan_tx[i].dma.irq = platform_get_irq_byname(pdev, buffer);
+		if (priv->chan_tx[i].dma.irq < 0)
+			return -ENOENT;
+	}
 
 	/* get the clock */
 	priv->clk = devm_clk_get(dev, NULL);
@@ -499,7 +601,7 @@ static int xrx200_probe(struct platform_device *pdev)
 
 	/* setup NAPI */
 	netif_napi_add(net_dev, &priv->chan_rx.napi, xrx200_poll_rx, 32);
-	netif_tx_napi_add(net_dev, &priv->chan_tx.napi, xrx200_tx_housekeeping, 32);
+	netif_tx_napi_add(net_dev, &priv->chan_tx[0].napi, xrx200_tx_housekeeping, 32);
 
 	platform_set_drvdata(pdev, priv);
 
@@ -522,10 +624,14 @@ static int xrx200_remove(struct platform_device *pdev)
 {
 	struct xrx200_priv *priv = platform_get_drvdata(pdev);
 	struct net_device *net_dev = priv->net_dev;
+	int i;
 
 	/* free stack related instances */
-	netif_stop_queue(net_dev);
-	netif_napi_del(&priv->chan_tx.napi);
+	netif_tx_stop_all_queues(net_dev);
+
+	for (i = 0; i < net_dev->real_num_tx_queues; i++)
+		netif_napi_del(&priv->chan_tx[i].napi);
+
 	netif_napi_del(&priv->chan_rx.napi);
 
 	/* remove the actual device */
