@@ -19,6 +19,8 @@
 
 #include <xway_dma.h>
 
+#define XRX200_REGS_N		1
+
 /* DMA */
 #define XRX200_DMA_DATA_LEN	0x600
 #define XRX200_DMA_RX		0
@@ -469,6 +471,29 @@ static void xrx200_hw_cleanup(struct xrx200_priv *priv)
 		dev_kfree_skb_any(priv->chan_rx.skb[i]);
 }
 
+static int xrx200_ethtools_get_regs_len(struct net_device *net_dev)
+{
+	return sizeof(u32) * XRX200_REGS_N;
+}
+
+static void xrx200_ethtools_get_regs(struct net_device *net_dev,
+				      struct ethtool_regs *regs, void *ret)
+{
+	u32 *data = (u32 *) ret;
+	size_t len = sizeof(u32) * XRX200_REGS_N;
+
+	regs->version = 0;
+	regs->len = len;
+
+	memset(data, 0, len);
+	data[0] = 0x12345678;
+}
+
+static const struct ethtool_ops xrx200_ethtool_ops = {
+	.get_regs_len   = xrx200_ethtools_get_regs_len,
+	.get_regs       = xrx200_ethtools_get_regs,
+};
+
 static int xrx200_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -487,6 +512,7 @@ static int xrx200_probe(struct platform_device *pdev)
 	priv->dev = dev;
 
 	net_dev->netdev_ops = &xrx200_netdev_ops;
+	net_dev->ethtool_ops = &xrx200_ethtool_ops;
 	SET_NETDEV_DEV(net_dev, dev);
 	net_dev->min_mtu = ETH_ZLEN;
 	net_dev->max_mtu = XRX200_DMA_DATA_LEN;
