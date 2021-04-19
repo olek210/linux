@@ -90,6 +90,7 @@
 					 GSWIP_MDIO_PHY_LINK_MASK | \
 					 GSWIP_MDIO_PHY_SPEED_MASK | \
 					 GSWIP_MDIO_PHY_FDUP_MASK)
+#define GSWIP_MDIO_EEEp(p)		(0x1C + (p))
 
 /* GSWIP MII Registers */
 #define GSWIP_MII_CFGp(p)		(0x2 * (p))
@@ -195,6 +196,9 @@
 #define GSWIP_PCE_DEFPVID(p)		(0x486 + ((p) * 0xA))
 
 #define GSWIP_MAC_FLEN			0x8C5
+#define GSWIP_MAC_PSTATp(p)		(0x900 + ((p) * 0xC))
+#define  GSWIP_MAC_PSTAT_TXLPI		BIT(1)	/* Transmit Low-power Idle Status */
+#define  GSWIP_MAC_PSTAT_RXLPI		BIT(0)	/* Receive Low-power Idle Status */
 #define GSWIP_MAC_CTRL_0p(p)		(0x903 + ((p) * 0xC))
 #define  GSWIP_MAC_CTRL_0_PADEN		BIT(8)
 #define  GSWIP_MAC_CTRL_0_FCS_EN	BIT(7)
@@ -214,6 +218,9 @@
 #define  GSWIP_MAC_CTRL_0_GMII_RGMII	0x0002
 #define GSWIP_MAC_CTRL_2p(p)		(0x905 + ((p) * 0xC))
 #define GSWIP_MAC_CTRL_2_MLEN		BIT(3) /* Maximum Untagged Frame Lnegth */
+#define GSWIP_MAC_CTRL_4p(p)		(0x907 + ((p) * 0xC))
+#define  GSWIP_MAC_CTRL_4_LPIEN		BIT(7) /* LPI Mode Enable */
+#define  GSWIP_MAC_CTRL_4_WAIT_MASK	0x007F /* LPI Wait Time */
 
 /* Ethernet Switch Fetch DMA Port Control Register */
 #define GSWIP_FDMA_PCTRLp(p)		(0xA80 + ((p) * 0x6))
@@ -1414,6 +1421,40 @@ static int gswip_port_fdb_dump(struct dsa_switch *ds, int port,
 	return 0;
 }
 
+static int
+gswip_set_mac_eee(struct dsa_switch *ds, int port, struct ethtool_eee *e)
+{
+	struct gswip_priv *priv = ds->priv;
+	u16 set;
+
+	if (e->tx_lpi_timer > 0x7F)
+		return -EINVAL;
+
+	set = (e->tx_lpi_timer | (e->tx_lpi_timer << 8));
+
+	set |= (e->tx_lpi_enabled << 7);
+	gswip_switch_w(priv, set, GSWIP_MAC_CTRL_4p(port));
+
+	return 0;
+}
+
+static int
+gswip_get_mac_eee(struct dsa_switch *ds, int port, struct ethtool_eee *e)
+{
+	struct gswip_priv *priv = ds->priv;
+	u16 reg;
+
+	reg = gswip_switch_r(priv, GSWIP_MAC_PSTATp(port));
+	if (reg & (GSWIP_MAC_PSTAT_RXLPI | GSWIP_MAC_PSTAT_TXLPI))
+		e->eee_active = true;
+
+	reg = gswip_switch_r(priv, GSWIP_MAC_CTRL_4p(port));
+	e->tx_lpi_enabled = ((reg & GSWIP_MAC_CTRL_4_LPIEN) >> 7);
+	e->tx_lpi_timer = (reg & GSWIP_MAC_CTRL_4_WAIT_MASK);
+
+	return 0;
+}
+
 static void gswip_phylink_set_capab(unsigned long *supported,
 				    struct phylink_link_state *state)
 {
@@ -1812,6 +1853,8 @@ static const struct dsa_switch_ops gswip_xrx200_switch_ops = {
 	.get_strings		= gswip_get_strings,
 	.get_ethtool_stats	= gswip_get_ethtool_stats,
 	.get_sset_count		= gswip_get_sset_count,
+	.get_mac_eee		= gswip_get_mac_eee,
+	.set_mac_eee		= gswip_set_mac_eee,
 };
 
 static const struct dsa_switch_ops gswip_xrx300_switch_ops = {
@@ -1836,6 +1879,8 @@ static const struct dsa_switch_ops gswip_xrx300_switch_ops = {
 	.get_strings		= gswip_get_strings,
 	.get_ethtool_stats	= gswip_get_ethtool_stats,
 	.get_sset_count		= gswip_get_sset_count,
+	.get_mac_eee		= gswip_get_mac_eee,
+	.set_mac_eee		= gswip_set_mac_eee,
 };
 
 static const struct xway_gphy_match_data xrx200a1x_gphy_data = {
