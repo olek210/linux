@@ -19,8 +19,6 @@
 #include <linux/of_net.h>
 #include <linux/of_platform.h>
 
-#include <xway_dma.h>
-
 /* DMA */
 #define XRX200_DMA_DATA_LEN	(SZ_64K - 1)
 #define XRX200_DMA_RX		0
@@ -62,7 +60,7 @@ struct xrx200_chan {
 	int tx_free;
 
 	struct napi_struct napi;
-	struct ltq_dma_channel dma;
+	struct dma_chan *chan;
 
 	union {
 		struct sk_buff *skb[LTQ_DESC_NUM];
@@ -478,45 +476,54 @@ static int xrx200_dma_init(struct xrx200_priv *priv)
 {
 	struct xrx200_chan *ch_rx = &priv->chan_rx;
 	struct xrx200_chan *ch_tx = &priv->chan_tx;
+	struct dma_slave_config = {};
 	int ret = 0;
 	int i;
 
-	ltq_dma_init_port(DMA_PORT_ETOP, XRX200_DMA_BURST_LEN,
-			  XRX200_DMA_BURST_LEN);
-
-	ch_rx->dma.nr = XRX200_DMA_RX;
-	ch_rx->dma.dev = priv->dev;
 	ch_rx->priv = priv;
 
-	ltq_dma_alloc_rx(&ch_rx->dma);
 	for (ch_rx->dma.desc = 0; ch_rx->dma.desc < LTQ_DESC_NUM;
 	     ch_rx->dma.desc++) {
 		ret = xrx200_alloc_buf(ch_rx, netdev_alloc_frag);
 		if (ret)
 			goto rx_free;
 	}
-	ch_rx->dma.desc = 0;
-	ret = devm_request_irq(priv->dev, ch_rx->dma.irq, xrx200_dma_irq, 0,
-			       "xrx200_net_rx", &priv->chan_rx);
-	if (ret) {
-		dev_err(priv->dev, "failed to request RX irq %d\n",
-			ch_rx->dma.irq);
+
+	ch_rx->dma_chan = dma_request_chan(priv->dev, "rx");
+	if (IS_ERR(ch_rx->dma_chan)) {
+		dev_err(priv->dev, "failed to request RX dma channel\n");
+		ret = PTR_ERR(ch_rx->dma_chan);
 		goto rx_ring_free;
 	}
 
-	ch_tx->dma.nr = XRX200_DMA_TX;
-	ch_tx->dma.dev = priv->dev;
-	ch_tx->priv = priv;
+	/* TODO: More settings */
+	conf.direction = DMA_DEV_TO_MEM;
 
-	ltq_dma_alloc_tx(&ch_tx->dma);
-	ret = devm_request_irq(priv->dev, ch_tx->dma.irq, xrx200_dma_irq, 0,
-			       "xrx200_net_tx", &priv->chan_tx);
+	ret = dmaengine_slave_config(ch_rx->dma_chan, &conf);
 	if (ret) {
-		dev_err(priv->dev, "failed to request TX irq %d\n",
-			ch_tx->dma.irq);
+		ret = -EINVAL;
+		/* TODO: Fix goto */
 		goto tx_free;
 	}
 
+	ch_tx->priv = priv;
+
+	ch_rx->dma_chan = dma_request_chan(priv->dev, "tx");
+	if (IS_ERR(ch_tx->dma_chan)) {
+		dev_err(priv->dev, "failed to request TX dma channel\n");
+		ret = PTR_ERR(ch_tx->dma_chan);
+		goto tx_free;
+	}
+
+	/* TODO: More settings */
+	conf.direction = DMA_DEV_TO_MEM;
+
+	ret = dmaengine_slave_config(ch_rx->dma_chan, &conf);
+	if (ret) {
+		ret = -EINVAL;
+		/* TODO: Fix goto */
+		goto tx_free;
+	}
 	return ret;
 
 tx_free:

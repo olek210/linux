@@ -1550,6 +1550,9 @@ static const struct ldma_inst_data toe_dma31 = {
 };
 
 static const struct of_device_id intel_ldma_match[] = {
+	{ .compatible = "lantiq,xrx200-dma", .data = &dma0},
+	{ .compatible = "lantiq,xrx300-dma", .data = &dma0},
+	{ .compatible = "lantiq,xrx330-dma", .data = &dma0},
 	{ .compatible = "intel,lgm-cdma", .data = &dma0},
 	{ .compatible = "intel,lgm-dma2tx", .data = &dma2tx},
 	{ .compatible = "intel,lgm-dma1rx", .data = &dma1rx},
