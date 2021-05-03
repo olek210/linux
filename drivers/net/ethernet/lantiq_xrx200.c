@@ -190,6 +190,7 @@ static int xrx200_hw_receive(struct xrx200_chan *ch)
 	struct sk_buff *skb = ch->skb[ch->dma.desc];
 	int len = (desc->ctl & LTQ_DMA_SIZE_MASK);
 	struct net_device *net_dev = priv->net_dev;
+	dma_addr_t mapping = desc->addr;
 	int ret;
 
 	ret = xrx200_alloc_skb(ch);
@@ -203,6 +204,9 @@ static int xrx200_hw_receive(struct xrx200_chan *ch)
 		netdev_err(net_dev, "failed to allocate new rx buffer\n");
 		return ret;
 	}
+
+	dma_unmap_single(priv->dev, mapping, XRX200_DMA_DATA_LEN,
+			 DMA_FROM_DEVICE);
 
 	skb_put(skb, len);
 	skb->protocol = eth_type_trans(skb, net_dev);
@@ -255,7 +259,11 @@ static int xrx200_tx_housekeeping(struct napi_struct *napi, int budget)
 
 		if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) == LTQ_DMA_C) {
 			struct sk_buff *skb = ch->skb[ch->tx_free];
+			dma_addr_t mapping = ch->dma.desc_base[ch->tx_free].addr |
+				((ch->dma.desc_base[ch->tx_free].ctl >> 23) & 0x1f);
 
+			dma_unmap_single(ch->priv->dev, mapping, skb->len,
+					 DMA_TO_DEVICE);
 			pkts++;
 			bytes += skb->len;
 			ch->skb[ch->tx_free] = NULL;
@@ -422,7 +430,12 @@ rx_free:
 
 static void xrx200_hw_cleanup(struct xrx200_priv *priv)
 {
+	struct xrx200_chan *ch_rx = &priv->chan_rx;
 	int i;
+
+	for (i = 0; i < LTQ_DESC_NUM; i++)
+		dma_unmap_single(ch_rx->priv->dev, ch_rx->dma.desc_base[i].addr,
+				 XRX200_DMA_DATA_LEN, DMA_FROM_DEVICE);
 
 	ltq_dma_free(&priv->chan_tx.dma);
 	ltq_dma_free(&priv->chan_rx.dma);
