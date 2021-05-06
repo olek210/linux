@@ -38,7 +38,10 @@
 #define DMA_IRQ_ACK		0x7e		/* IRQ status register */
 #define DMA_POLL		BIT(31)		/* turn on channel polling */
 #define DMA_CLK_DIV4		BIT(6)		/* polling clock divider */
-#define DMA_2W_BURST		BIT(1)		/* 2 word burst length */
+#define DMA_1W_BURST		0x0		/* 1 word burst length/no burst */
+#define DMA_2W_BURST		0x1		/* 2 word burst length */
+#define DMA_4W_BURST		0x2		/* 4 word burst length */
+#define DMA_8W_BURST		0x3		/* 8 word burst length */
 #define DMA_MAX_CHANNEL		20		/* the soc has 20 channels */
 #define DMA_ETOP_ENDIANNESS	(0xf << 8) /* endianness swap etop channels */
 #define DMA_WEIGHT	(BIT(17) | BIT(16))	/* default channel wheight */
@@ -125,7 +128,7 @@ ltq_dma_alloc(struct ltq_dma_channel *ch)
 	spin_lock_irqsave(&ltq_dma_lock, flags);
 	ltq_dma_w32(ch->nr, LTQ_DMA_CS);
 	ltq_dma_w32(ch->phys, LTQ_DMA_CDBA);
-	ltq_dma_w32(LTQ_DESC_NUM, LTQ_DMA_CDLEN);
+	ltq_dma_w32(LTQ_DESC_NUM, LTQ_DMA_CDLEN);	//0xff mask
 	ltq_dma_w32_mask(DMA_CHAN_ON, 0, LTQ_DMA_CCTRL);
 	wmb();
 	ltq_dma_w32_mask(0, DMA_CHAN_RST, LTQ_DMA_CCTRL);
@@ -142,7 +145,13 @@ ltq_dma_alloc_tx(struct ltq_dma_channel *ch)
 	ltq_dma_alloc(ch);
 
 	spin_lock_irqsave(&ltq_dma_lock, flags);
-	ltq_dma_w32(DMA_DESCPT, LTQ_DMA_CIE);
+
+//DMA_DESCPT BIT(3) //end of descriptor
+//BIT(1)	//end of packet
+//	ltq_dma_w32(DMA_DESCPT, LTQ_DMA_CIE);
+	ltq_dma_w32(BIT(1), LTQ_DMA_CIE);
+	
+	
 	ltq_dma_w32_mask(0, 1 << ch->nr, LTQ_DMA_IRNEN);
 	ltq_dma_w32(DMA_WEIGHT | DMA_TX, LTQ_DMA_CCTRL);
 	spin_unlock_irqrestore(&ltq_dma_lock, flags);
@@ -181,6 +190,12 @@ ltq_dma_init_port(int p)
 	ltq_dma_w32(p, LTQ_DMA_PS);
 	switch (p) {
 	case DMA_PORT_ETOP:
+
+		/* 8 words burst, data must be aligned on 4*N bytes or freeze */
+//TODO? different bursts for TX and RX (RX is fine at 1G eth)		
+		ltq_dma_w32_mask(0x3c, (DMA_8W_BURST << 4) | (DMA_8W_BURST << 2),
+			LTQ_DMA_PCTRL);
+
 		/*
 		 * Tell the DMA engine to swap the endianness of data frames and
 		 * drop packets if the channel arbitration fails.
@@ -228,9 +243,17 @@ ltq_dma_init(struct platform_device *pdev)
 	for (i = 0; i < DMA_MAX_CHANNEL; i++) {
 		ltq_dma_w32(i, LTQ_DMA_CS);
 		ltq_dma_w32(DMA_CHAN_RST, LTQ_DMA_CCTRL);
-		ltq_dma_w32(DMA_POLL | DMA_CLK_DIV4, LTQ_DMA_CPOLL);
 		ltq_dma_w32_mask(DMA_CHAN_ON, 0, LTQ_DMA_CCTRL);
 	}
+
+//TODO 0x100 << 4 fastest TX without fragments
+// 0x100 for fragments timeouts, 0x10 only under really _heavy_ load
+//TODO not dependent on channel select (LTQ_DMA_CS), why it was in for cycle
+	ltq_dma_w32(DMA_POLL | (0x10 << 4), LTQ_DMA_CPOLL);
+
+//TODO packet arbitration ???, test different values
+//0x3ff << 16 multiple burst count, 1<<30 multiple burst arbitration, 1<<31 packet arbitration, 1<<0 reset (!)
+//	ltq_dma_w32((1 << 31) | 0x40000, LTQ_DMA_CTRL);
 
 	id = ltq_dma_r32(LTQ_DMA_ID);
 	dev_info(&pdev->dev,
