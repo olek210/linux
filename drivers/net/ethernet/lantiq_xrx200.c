@@ -318,10 +318,12 @@ static int xrx200_tx_housekeeping(struct napi_struct *napi, int budget)
 		if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) == LTQ_DMA_C) {
 			struct sk_buff *skb = ch->skb[ch->tx_free];
 
-			pkts++;
-			bytes += skb->len;
-			ch->skb[ch->tx_free] = NULL;
-			consume_skb(skb);
+			if (desc->ctl & LTQ_DMA_EOP) {
+				pkts++;
+				bytes += skb->len;
+				ch->skb[ch->tx_free] = NULL;
+				consume_skb(skb);
+			}
 			memset(&ch->dma.desc_base[ch->tx_free], 0,
 			       sizeof(struct ltq_dma_desc));
 			ch->tx_free++;
@@ -347,15 +349,31 @@ static int xrx200_tx_housekeeping(struct napi_struct *napi, int budget)
 	return pkts;
 }
 
+static inline int xrx200_check_tx_bd_space(struct xrx200_chan *ch, int num_frags)
+{
+	int i;
+
+	for (i = 0; i <= num_frags; i++) {
+		int desc_num = ((ch->dma.desc + i) % LTQ_DESC_NUM);
+		struct ltq_dma_desc *desc = &ch->dma.desc_base[desc_num];
+
+		if (unlikely((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) || ch->skb[desc_num]))
+			return 1;
+	}
+
+	return 0;
+}
+
 static netdev_tx_t xrx200_start_xmit(struct sk_buff *skb,
 				     struct net_device *net_dev)
 {
 	struct xrx200_priv *priv = netdev_priv(net_dev);
 	struct xrx200_chan *ch = &priv->chan_tx;
 	struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
+	struct ltq_dma_desc *head_desc = desc;
 	u32 byte_offset;
 	dma_addr_t mapping;
-	int len;
+	int len, i;
 
 	skb->dev = net_dev;
 	if (skb_put_padto(skb, ETH_ZLEN)) {
@@ -363,15 +381,13 @@ static netdev_tx_t xrx200_start_xmit(struct sk_buff *skb,
 		return NETDEV_TX_OK;
 	}
 
-	len = skb->len;
+	len = skb_headlen(skb);
 
-	if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) || ch->skb[ch->dma.desc]) {
+	if (unlikely(xrx200_check_tx_bd_space(ch, skb_shinfo(skb)->nr_frags))) {
 		netdev_err(net_dev, "tx ring full\n");
 		netif_stop_queue(net_dev);
 		return NETDEV_TX_BUSY;
 	}
-
-	ch->skb[ch->dma.desc] = skb;
 
 	mapping = dma_map_single(priv->dev, skb->data, len, DMA_TO_DEVICE);
 	if (unlikely(dma_mapping_error(priv->dev, mapping)))
@@ -381,18 +397,57 @@ static netdev_tx_t xrx200_start_xmit(struct sk_buff *skb,
 	byte_offset = mapping % (XRX200_DMA_BURST_LEN * 4);
 
 	desc->addr = mapping - byte_offset;
+
+	desc->ctl = LTQ_DMA_SOP | LTQ_DMA_TX_OFFSET(byte_offset) |
+		(len & LTQ_DMA_SIZE_MASK);
+
+	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
+		skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
+
+		ch->dma.desc++;
+		ch->dma.desc %= LTQ_DESC_NUM;
+
+		desc = &ch->dma.desc_base[ch->dma.desc];
+		len = skb_frag_size(frag);
+
+		mapping = skb_frag_dma_map(priv->dev, frag, 0, len, DMA_TO_DEVICE);
+		if (unlikely(dma_mapping_error(priv->dev, mapping)))
+			goto err_frag;
+
+		/* dma needs to start on a burst length value aligned address */
+		byte_offset = mapping % (XRX200_DMA_BURST_LEN * 4);
+
+		desc->addr = mapping - byte_offset;
+
+		desc->ctl = LTQ_DMA_OWN | LTQ_DMA_TX_OFFSET(byte_offset) |
+			(len & LTQ_DMA_SIZE_MASK);
+	}
+
+	/* the last fragment needs EOP */
+	desc->ctl |= LTQ_DMA_EOP;
+
 	/* Make sure the address is written before we give it to HW */
 	wmb();
-	desc->ctl = LTQ_DMA_OWN | LTQ_DMA_SOP | LTQ_DMA_EOP |
-		LTQ_DMA_TX_OFFSET(byte_offset) | (len & LTQ_DMA_SIZE_MASK);
+	head_desc->ctl |= LTQ_DMA_OWN;
+
+	ch->skb[ch->dma.desc] = skb;
+
 	ch->dma.desc++;
 	ch->dma.desc %= LTQ_DESC_NUM;
 	if (ch->dma.desc == ch->tx_free)
 		netif_stop_queue(net_dev);
 
-	netdev_sent_queue(net_dev, len);
+	netdev_sent_queue(net_dev, skb->len);
 
 	return NETDEV_TX_OK;
+
+err_frag:
+	while ((i-- >= 0)) {
+		memset(&ch->dma.desc_base[ch->dma.desc], 0,
+		       sizeof(struct ltq_dma_desc));
+		ch->dma.desc--;
+		ch->dma.desc %= LTQ_DESC_NUM;
+	}
 
 err_drop:
 	dev_kfree_skb(skb);
@@ -569,6 +624,9 @@ static int xrx200_probe(struct platform_device *pdev)
 	net_dev->max_mtu = XRX200_DMA_DATA_LEN - xrx200_max_frame_len(0);
 	priv->rx_buf_size = xrx200_buffer_size(ETH_DATA_LEN);
 	priv->rx_skb_size = xrx200_skb_size(priv->rx_buf_size);
+	net_dev->features = NETIF_F_SG;
+	net_dev->hw_features = NETIF_F_SG;
+	net_dev->vlan_features = NETIF_F_SG;
 
 	/* load the memory ranges */
 	priv->pmac_reg = devm_platform_get_and_ioremap_resource(pdev, 0, NULL);
