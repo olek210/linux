@@ -8,7 +8,7 @@
 #define LTQ_DMA_H__
 
 #define LTQ_DESC_SIZE		0x08	/* each descriptor is 64bit */
-#define LTQ_DESC_NUM		0x40	/* 64 descriptors / channel */
+#define LTQ_MAX_DESC_NUM	0xff	/* maximum number of descriptors */
 
 #define LTQ_DMA_OWN		BIT(31) /* owner bit */
 #define LTQ_DMA_C		BIT(30) /* complete bit */
@@ -26,7 +26,8 @@ struct ltq_dma_desc {
 struct ltq_dma_channel {
 	int nr;				/* the channel number */
 	int irq;			/* the mapped irq */
-	int desc;			/* the current descriptor */
+	u8 desc;			/* the current descriptor */
+	u8 desc_num;			/* number of descriptor */
 	struct ltq_dma_desc *desc_base; /* the descriptor base */
 	int phys;			/* physical addr */
 	struct device *dev;

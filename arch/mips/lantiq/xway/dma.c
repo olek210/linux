@@ -120,13 +120,13 @@ ltq_dma_alloc(struct ltq_dma_channel *ch)
 
 	ch->desc = 0;
 	ch->desc_base = dma_alloc_coherent(ch->dev,
-					   LTQ_DESC_NUM * LTQ_DESC_SIZE,
+					   ch->desc_num * LTQ_DESC_SIZE,
 					   &ch->phys, GFP_ATOMIC);
 
 	spin_lock_irqsave(&ltq_dma_lock, flags);
 	ltq_dma_w32(ch->nr, LTQ_DMA_CS);
 	ltq_dma_w32(ch->phys, LTQ_DMA_CDBA);
-	ltq_dma_w32(LTQ_DESC_NUM, LTQ_DMA_CDLEN);
+	ltq_dma_w32(ch->desc_num, LTQ_DMA_CDLEN);
 	ltq_dma_w32_mask(DMA_CHAN_ON, 0, LTQ_DMA_CCTRL);
 	wmb();
 	ltq_dma_w32_mask(0, DMA_CHAN_RST, LTQ_DMA_CCTRL);
@@ -171,8 +171,8 @@ ltq_dma_free(struct ltq_dma_channel *ch)
 	if (!ch->desc_base)
 		return;
 	ltq_dma_close(ch);
-	dma_free_coherent(ch->dev, LTQ_DESC_NUM * LTQ_DESC_SIZE,
-		ch->desc_base, ch->phys);
+	dma_free_coherent(ch->dev, ch->desc_num * LTQ_DESC_SIZE,
+			  ch->desc_base, ch->phys);
 }
 EXPORT_SYMBOL_GPL(ltq_dma_free);
 

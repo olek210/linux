@@ -24,6 +24,8 @@
 #define XRX200_DMA_RX		0
 #define XRX200_DMA_TX		1
 
+#define XRX200_DESC_NUM		192
+
 /* cpu port mac */
 #define PMAC_RX_IPG		0x0024
 #define PMAC_RX_IPG_MASK	0xf
@@ -57,7 +59,7 @@ struct xrx200_chan {
 
 	struct napi_struct napi;
 	struct ltq_dma_channel dma;
-	struct sk_buff *skb[LTQ_DESC_NUM];
+	struct sk_buff *skb[LTQ_MAX_DESC_NUM];
 
 	struct xrx200_priv *priv;
 };
@@ -99,7 +101,7 @@ static void xrx200_flush_dma(struct xrx200_chan *ch)
 {
 	int i;
 
-	for (i = 0; i < LTQ_DESC_NUM; i++) {
+	for (i = 0; i < ch->dma.desc_num; i++) {
 		struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
 
 		if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) != LTQ_DMA_C)
@@ -108,7 +110,7 @@ static void xrx200_flush_dma(struct xrx200_chan *ch)
 		desc->ctl = LTQ_DMA_OWN | LTQ_DMA_RX_OFFSET(NET_IP_ALIGN) |
 			    XRX200_DMA_DATA_LEN;
 		ch->dma.desc++;
-		ch->dma.desc %= LTQ_DESC_NUM;
+		ch->dma.desc %= ch->dma.desc_num;
 	}
 }
 
@@ -197,7 +199,7 @@ static int xrx200_hw_receive(struct xrx200_chan *ch)
 	ret = xrx200_alloc_skb(ch);
 
 	ch->dma.desc++;
-	ch->dma.desc %= LTQ_DESC_NUM;
+	ch->dma.desc %= ch->dma.desc_num;
 
 	if (ret) {
 		net_dev->stats.rx_dropped++;
@@ -264,7 +266,7 @@ static int xrx200_tx_housekeeping(struct napi_struct *napi, int budget)
 			memset(&ch->dma.desc_base[ch->tx_free], 0,
 			       sizeof(struct ltq_dma_desc));
 			ch->tx_free++;
-			ch->tx_free %= LTQ_DESC_NUM;
+			ch->tx_free %= ch->dma.desc_num;
 		} else {
 			break;
 		}
@@ -325,7 +327,7 @@ static netdev_tx_t xrx200_start_xmit(struct sk_buff *skb,
 	desc->ctl = LTQ_DMA_OWN | LTQ_DMA_SOP | LTQ_DMA_EOP |
 		LTQ_DMA_TX_OFFSET(byte_offset) | (len & LTQ_DMA_SIZE_MASK);
 	ch->dma.desc++;
-	ch->dma.desc %= LTQ_DESC_NUM;
+	ch->dma.desc %= ch->dma.desc_num;
 	if (ch->dma.desc == ch->tx_free)
 		netif_stop_queue(net_dev);
 
@@ -362,7 +364,7 @@ static irqreturn_t xrx200_dma_irq(int irq, void *ptr)
 	return IRQ_HANDLED;
 }
 
-static int xrx200_dma_init(struct xrx200_priv *priv)
+static int xrx200_dma_init(struct xrx200_priv *priv, u8 rx_desc, u8 tx_desc)
 {
 	struct xrx200_chan *ch_rx = &priv->chan_rx;
 	struct xrx200_chan *ch_tx = &priv->chan_tx;
@@ -372,11 +374,12 @@ static int xrx200_dma_init(struct xrx200_priv *priv)
 	ltq_dma_init_port(DMA_PORT_ETOP);
 
 	ch_rx->dma.nr = XRX200_DMA_RX;
+	ch_rx->dma.desc_num = rx_desc;
 	ch_rx->dma.dev = priv->dev;
 	ch_rx->priv = priv;
 
 	ltq_dma_alloc_rx(&ch_rx->dma);
-	for (ch_rx->dma.desc = 0; ch_rx->dma.desc < LTQ_DESC_NUM;
+	for (ch_rx->dma.desc = 0; ch_rx->dma.desc < ch_rx->dma.desc_num;
 	     ch_rx->dma.desc++) {
 		ret = xrx200_alloc_skb(ch_rx);
 		if (ret)
@@ -392,6 +395,7 @@ static int xrx200_dma_init(struct xrx200_priv *priv)
 	}
 
 	ch_tx->dma.nr = XRX200_DMA_TX;
+	ch_tx->dma.desc_num = tx_desc;
 	ch_tx->dma.dev = priv->dev;
 	ch_tx->priv = priv;
 
@@ -411,7 +415,7 @@ tx_free:
 
 rx_ring_free:
 	/* free the allocated RX ring */
-	for (i = 0; i < LTQ_DESC_NUM; i++) {
+	for (i = 0; i < ch_rx->dma.desc_num; i++) {
 		if (priv->chan_rx.skb[i])
 			dev_kfree_skb_any(priv->chan_rx.skb[i]);
 	}
@@ -429,9 +433,57 @@ static void xrx200_hw_cleanup(struct xrx200_priv *priv)
 	ltq_dma_free(&priv->chan_rx.dma);
 
 	/* free the allocated RX ring */
-	for (i = 0; i < LTQ_DESC_NUM; i++)
+	for (i = 0; i < priv->chan_rx.dma.desc_num; i++)
 		dev_kfree_skb_any(priv->chan_rx.skb[i]);
 }
+
+static void xrx200_get_ringparam(struct net_device *net_dev,
+				 struct ethtool_ringparam *ring)
+{
+	struct xrx200_priv *priv = netdev_priv(net_dev);
+
+	ring->rx_max_pending = LTQ_MAX_DESC_NUM;
+	ring->tx_max_pending = LTQ_MAX_DESC_NUM;
+
+	ring->rx_pending = priv->chan_rx.dma.desc_num;
+	ring->tx_pending = priv->chan_tx.dma.desc_num;
+}
+
+static int xrx200_set_ringparam(struct net_device *net_dev,
+				struct ethtool_ringparam *ring)
+{
+	struct xrx200_priv *priv = netdev_priv(net_dev);
+	bool running = false;
+	int ret = 0;
+
+	if ((ring->rx_mini_pending) || (ring->rx_jumbo_pending))
+		return -EINVAL;
+
+	if ((ring->tx_pending == priv->chan_tx.dma.desc_num) &&
+	    (ring->rx_pending == priv->chan_rx.dma.desc_num)) {
+		/* nothing to do */
+		return 0;
+	}
+
+	running = netif_running(net_dev);
+	if (running)
+		xrx200_close(net_dev);
+
+	xrx200_hw_cleanup(priv);
+	ret = xrx200_dma_init(priv, ring->rx_pending, ring->tx_pending);
+	if (ret)
+		return ret;
+
+	if (running)
+		xrx200_open(net_dev);
+
+	return 0;
+}
+
+static const struct ethtool_ops xrx200_ethtool_ops = {
+	.get_ringparam		= xrx200_get_ringparam,
+	.set_ringparam		= xrx200_set_ringparam,
+};
 
 static int xrx200_probe(struct platform_device *pdev)
 {
@@ -449,6 +501,8 @@ static int xrx200_probe(struct platform_device *pdev)
 	priv = netdev_priv(net_dev);
 	priv->net_dev = net_dev;
 	priv->dev = dev;
+
+	net_dev->ethtool_ops = &xrx200_ethtool_ops;
 
 	net_dev->netdev_ops = &xrx200_netdev_ops;
 	SET_NETDEV_DEV(net_dev, dev);
@@ -479,7 +533,7 @@ static int xrx200_probe(struct platform_device *pdev)
 		eth_hw_addr_random(net_dev);
 
 	/* bring up the dma engine and IP core */
-	err = xrx200_dma_init(priv);
+	err = xrx200_dma_init(priv, XRX200_DESC_NUM, XRX200_DESC_NUM);
 	if (err)
 		return err;
 
