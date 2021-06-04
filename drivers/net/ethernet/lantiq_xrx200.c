@@ -364,7 +364,6 @@ static const struct net_device_ops xrx200_netdev_ops = {
 	.ndo_start_xmit		= xrx200_start_xmit,
 	.ndo_set_mac_address	= eth_mac_addr,
 	.ndo_validate_addr	= eth_validate_addr,
-	.ndo_select_queue	= dev_pick_tx_cpu_id,
 };
 
 static irqreturn_t xrx200_dma_irq(int irq, void *ptr)
