@@ -140,6 +140,14 @@
 #define  GSWIP_BM_RAM_CTRL_ADDR_MASK	GENMASK(4, 0)
 #define GSWIP_BM_QUEUE_GCTRL		0x04A
 #define  GSWIP_BM_QUEUE_GCTRL_GL_MOD	BIT(10)
+#define  GSWIP_BM_QUEUE_GCTRL_DPROB	GENMASK(1, 0)
+#define GSWIP_BM_WRED_MINTH		0x04B
+#define GSWIP_BM_WRED_MAXTH		0x04C
+#define GSWIP_BM_WY_MINTH		0x04D
+#define GSWIP_BM_WY_MAXTH		0x04E
+#define GSWIP_BM_WG_MINTH		0x04F
+#define GSWIP_BM_WG_MAXTH		0x050
+
 /* buffer management Port Configuration Register */
 #define GSWIP_BM_PCFGp(p)		(0x080 + ((p) * 2))
 #define  GSWIP_BM_PCFG_CNTEN		BIT(0)	/* RMON Counter Enable */
@@ -227,10 +235,17 @@
 #define  GSWIP_FDMA_PCTRL_VLANMOD_BOTH	(0x3 << GSWIP_FDMA_PCTRL_VLANMOD_SHIFT)
 
 /* Ethernet Switch Store DMA Port Control Register */
+#define GSWIP_SDMA_FCTHR1		0xB41	/* Global Buffer Non Conforming Flow Control Threshold Minimum [number of segments] */
+#define GSWIP_SDMA_FCTHR2		0xB42	/* Global Buffer Non Conforming Flow Control Threshold Maximum [number of segments] */
+#define GSWIP_SDMA_FCTHR3		0xB43	/* Global Buffer Conforming Flow Control Threshold Minimum [number of segments] */
+#define GSWIP_SDMA_FCTHR4		0xB44	/* Global Buffer Conforming Flow Control Threshold Maximum [number of segments] */
 #define GSWIP_SDMA_PCTRLp(p)		(0xBC0 + ((p) * 0x6))
 #define  GSWIP_SDMA_PCTRL_EN		BIT(0)	/* SDMA Port Enable */
 #define  GSWIP_SDMA_PCTRL_FCEN		BIT(1)	/* Flow Control Enable */
-#define  GSWIP_SDMA_PCTRL_PAUFWD	BIT(1)	/* Pause Frame Forwarding */
+#define  GSWIP_SDMA_PCTRL_PAUFWD	BIT(3)	/* Pause Frame Forwarding */
+
+#define GSWIP_SDMA_PFCTHR8p(p)		(0xC0E + ((p) * 0x4))	/* Ingress Port occupied Buffer Flow Control Threshold Minimum [number of segments] */
+#define GSWIP_SDMA_PFCTHR9p(p)		(0xC0F + ((p) * 0x4))	/* Ingress Port occupied Buffer Flow Control Threshold Maximum [number of segments] */
 
 #define GSWIP_TABLE_ACTIVE_VLAN		0x01
 #define GSWIP_TABLE_VLAN_MAPPING	0x02
@@ -864,6 +879,30 @@ static int gswip_setup(struct dsa_switch *ds)
 	gswip_port_enable(ds, cpu_port, NULL);
 
 	ds->configure_vlan_while_not_filtering = false;
+
+	/* Enable Flow Control */
+	for (i = 0; i < priv->hw_info->max_ports; i++) {
+		gswip_switch_w(priv, 18, GSWIP_SDMA_PFCTHR8p(i));
+		gswip_switch_w(priv, 30, GSWIP_SDMA_PFCTHR9p(i));
+	}
+
+	/* Configure Buffer reservation of each queue to 24 */
+	for (i = 0; i < 31; i++) {
+	}
+
+	/* Configure Global buffer threshold */
+	gswip_switch_w(priv, 0x3ff, GSWIP_BM_WRED_MINTH);
+	gswip_switch_w(priv, 0x3ff, GSWIP_BM_WRED_MAXTH);
+	gswip_switch_w(priv, 0x3ff, GSWIP_BM_WY_MINTH);
+	gswip_switch_w(priv, 0x3ff, GSWIP_BM_WY_MAXTH);
+	gswip_switch_w(priv, 0x100, GSWIP_BM_WG_MINTH);
+	gswip_switch_w(priv, 0x100, GSWIP_BM_WG_MAXTH);
+
+	/* Configure Global flowcontrol threshold buffer */
+	gswip_switch_w(priv, 0x3ff, GSWIP_SDMA_FCTHR1);
+	gswip_switch_w(priv, 0x3ff, GSWIP_SDMA_FCTHR1);
+	gswip_switch_w(priv, 0x3ff, GSWIP_SDMA_FCTHR1);
+	gswip_switch_w(priv, 0x3ff, GSWIP_SDMA_FCTHR1);
 
 	return 0;
 }
