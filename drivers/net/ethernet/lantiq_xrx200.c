@@ -58,6 +58,15 @@
 /* Enable reaction to Pause frames in the PMAC */
 #define PMAC_HD_CTL_FC		BIT(10)
 
+struct xrx200_stats {
+	struct u64_stats_sync syncp;
+
+	u64 packets;
+	u64 bytes;
+	u64 errors;
+	u64 dropped;
+};
+
 struct xrx200_chan {
 	int tx_free;
 
@@ -68,6 +77,8 @@ struct xrx200_chan {
 		struct sk_buff *skb[LTQ_DESC_NUM];
 		void *rx_buff[LTQ_DESC_NUM];
 	};
+
+	struct xrx200_stats stats;
 
 	struct sk_buff *skb_head;
 	struct sk_buff *skb_tail;
@@ -233,7 +244,9 @@ static int xrx200_hw_receive(struct xrx200_chan *ch)
 	ch->dma.desc %= LTQ_DESC_NUM;
 
 	if (ret) {
-		net_dev->stats.rx_dropped++;
+		u64_stats_update_begin(&ch->stats.syncp);
+		ch->stats.dropped++;
+		u64_stats_update_end(&ch->stats.syncp);
 		netdev_err(net_dev, "failed to allocate new rx buffer\n");
 		return ret;
 	}
@@ -260,8 +273,10 @@ static int xrx200_hw_receive(struct xrx200_chan *ch)
 
 	if (ctl & LTQ_DMA_EOP) {
 		ch->skb_head->protocol = eth_type_trans(ch->skb_head, net_dev);
-		net_dev->stats.rx_packets++;
-		net_dev->stats.rx_bytes += ch->skb_head->len;
+		u64_stats_update_begin(&ch->stats.syncp);
+		ch->stats.packets++;
+		ch->stats.bytes += ch->skb_head->len;
+		u64_stats_update_end(&ch->stats.syncp);
 		netif_receive_skb(ch->skb_head);
 		ch->skb_head = NULL;
 		ch->skb_tail = NULL;
@@ -331,8 +346,10 @@ static int xrx200_tx_housekeeping(struct napi_struct *napi, int budget)
 		}
 	}
 
-	net_dev->stats.tx_packets += pkts;
-	net_dev->stats.tx_bytes += bytes;
+	u64_stats_update_begin(&ch->stats.syncp);
+	ch->stats.packets += pkts;
+	ch->stats.bytes += bytes;
+	u64_stats_update_end(&ch->stats.syncp);
 	netdev_completed_queue(ch->priv->net_dev, pkts, bytes);
 
 	netif_tx_unlock(net_dev);
@@ -359,7 +376,9 @@ static netdev_tx_t xrx200_start_xmit(struct sk_buff *skb,
 
 	skb->dev = net_dev;
 	if (skb_put_padto(skb, ETH_ZLEN)) {
-		net_dev->stats.tx_dropped++;
+		u64_stats_update_begin(&ch->stats.syncp);
+		ch->stats.dropped++;
+		u64_stats_update_end(&ch->stats.syncp);
 		return NETDEV_TX_OK;
 	}
 
@@ -396,8 +415,10 @@ static netdev_tx_t xrx200_start_xmit(struct sk_buff *skb,
 
 err_drop:
 	dev_kfree_skb(skb);
-	net_dev->stats.tx_dropped++;
-	net_dev->stats.tx_errors++;
+	u64_stats_update_begin(&ch->stats.syncp);
+	ch->stats.dropped++;
+	ch->stats.errors++;
+	u64_stats_update_end(&ch->stats.syncp);
 	return NETDEV_TX_OK;
 }
 
@@ -451,6 +472,26 @@ xrx200_change_mtu(struct net_device *net_dev, int new_mtu)
 	return ret;
 }
 
+static void xrx200_get_stats64(struct net_device *net_dev,
+			       struct rtnl_link_stats64 *stats)
+{
+	struct xrx200_priv *priv = netdev_priv(net_dev);
+
+	u64_stats_update_begin(&priv->chan_rx.stats.syncp);
+	stats->rx_packets = priv->chan_rx.stats.packets;
+	stats->rx_bytes = priv->chan_rx.stats.bytes;
+	stats->rx_errors = priv->chan_rx.stats.errors;
+	stats->rx_dropped = priv->chan_rx.stats.dropped;
+	u64_stats_update_end(&priv->chan_rx.stats.syncp);
+
+	u64_stats_update_begin(&priv->chan_tx.stats.syncp);
+	stats->tx_packets = priv->chan_tx.stats.packets;
+	stats->tx_bytes = priv->chan_tx.stats.bytes;
+	stats->tx_errors = priv->chan_tx.stats.errors;
+	stats->tx_dropped = priv->chan_tx.stats.dropped;
+	u64_stats_update_end(&priv->chan_tx.stats.syncp);
+}
+
 static const struct net_device_ops xrx200_netdev_ops = {
 	.ndo_open		= xrx200_open,
 	.ndo_stop		= xrx200_close,
@@ -458,6 +499,7 @@ static const struct net_device_ops xrx200_netdev_ops = {
 	.ndo_change_mtu		= xrx200_change_mtu,
 	.ndo_set_mac_address	= eth_mac_addr,
 	.ndo_validate_addr	= eth_validate_addr,
+	.ndo_get_stats64	= xrx200_get_stats64,
 };
 
 static irqreturn_t xrx200_dma_irq(int irq, void *ptr)
