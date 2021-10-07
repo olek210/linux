@@ -38,6 +38,7 @@
 #define DMA_PDEN		BIT(6)		/* enable packet drop */
 #define DMA_CHAN_RST		BIT(1)		/* channel on / off bit */
 #define DMA_RESET		BIT(0)		/* channel on / off bit */
+#define DMA_PKTARB		BIT(31)		/* packet arbitration */
 #define DMA_IRQ_ACK		0x7e		/* IRQ status register */
 #define DMA_POLL		BIT(31)		/* turn on channel polling */
 #define DMA_CLK_DIV4		BIT(6)		/* polling clock divider */
@@ -270,6 +271,8 @@ ltq_dma_init(struct platform_device *pdev)
 		ltq_dma_w32(DMA_POLL | DMA_CLK_DIV4, LTQ_DMA_CPOLL);
 		ltq_dma_w32_mask(DMA_CHAN_ON, 0, LTQ_DMA_CCTRL);
 	}
+
+	ltq_dma_w32_mask(0, DMA_PKTARB, LTQ_DMA_CTRL);
 
 	dev_info(&pdev->dev,
 		"Init done - hw rev: %X, ports: %d, channels: %d\n",
