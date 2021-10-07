@@ -216,7 +216,7 @@ skip:
 	return ret;
 }
 
-static int xrx200_hw_receive(struct xrx200_chan *ch)
+static int xrx200_hw_receive(struct xrx200_chan *ch, struct list_head *rx_list)
 {
 	struct xrx200_priv *priv = ch->priv;
 	struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
@@ -259,8 +259,7 @@ static int xrx200_hw_receive(struct xrx200_chan *ch)
 	}
 
 	if (ctl & LTQ_DMA_EOP) {
-		ch->skb_head->protocol = eth_type_trans(ch->skb_head, net_dev);
-		netif_receive_skb(ch->skb_head);
+		list_add_tail(&skb->list, rx_list);
 		net_dev->stats.rx_packets++;
 		net_dev->stats.rx_bytes += ch->skb_head->len;
 		ch->skb_head = NULL;
@@ -277,14 +276,19 @@ static int xrx200_poll_rx(struct napi_struct *napi, int budget)
 {
 	struct xrx200_chan *ch = container_of(napi,
 				struct xrx200_chan, napi);
+	struct net_device *net_dev = ch->priv->net_dev;
+	struct list_head rx_list;
+	struct sk_buff *skb;
 	int rx = 0;
 	int ret;
+
+	INIT_LIST_HEAD(&rx_list);
 
 	while (rx < budget) {
 		struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
 
 		if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) == LTQ_DMA_C) {
-			ret = xrx200_hw_receive(ch);
+			ret = xrx200_hw_receive(ch, &rx_list);
 			if (ret == XRX200_DMA_PACKET_IN_PROGRESS)
 				continue;
 			if (ret != XRX200_DMA_PACKET_COMPLETE)
@@ -294,6 +298,10 @@ static int xrx200_poll_rx(struct napi_struct *napi, int budget)
 			break;
 		}
 	}
+
+	list_for_each_entry(skb, &rx_list, list)
+		skb->protocol = eth_type_trans(skb, net_dev);
+	netif_receive_skb_list(&rx_list);
 
 	if (rx < budget) {
 		if (napi_complete_done(&ch->napi, rx))
