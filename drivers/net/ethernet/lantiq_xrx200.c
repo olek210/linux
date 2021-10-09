@@ -105,8 +105,7 @@ static void xrx200_flush_dma(struct xrx200_chan *ch)
 		if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) != LTQ_DMA_C)
 			break;
 
-		desc->ctl = LTQ_DMA_OWN | LTQ_DMA_RX_OFFSET(NET_IP_ALIGN) |
-			    XRX200_DMA_DATA_LEN;
+		desc->ctl = LTQ_DMA_OWN | XRX200_DMA_DATA_LEN;
 		ch->dma.desc++;
 		ch->dma.desc %= LTQ_DESC_NUM;
 	}
@@ -158,8 +157,8 @@ static int xrx200_alloc_skb(struct xrx200_chan *ch)
 	dma_addr_t mapping;
 	int ret = 0;
 
-	ch->skb[ch->dma.desc] = netdev_alloc_skb_ip_align(ch->priv->net_dev,
-							  XRX200_DMA_DATA_LEN);
+	ch->skb[ch->dma.desc] = netdev_alloc_skb(ch->priv->net_dev,
+						 XRX200_DMA_DATA_LEN);
 	if (!ch->skb[ch->dma.desc]) {
 		ret = -ENOMEM;
 		goto skip;
@@ -179,8 +178,7 @@ static int xrx200_alloc_skb(struct xrx200_chan *ch)
 	wmb();
 skip:
 	ch->dma.desc_base[ch->dma.desc].ctl =
-		LTQ_DMA_OWN | LTQ_DMA_RX_OFFSET(NET_IP_ALIGN) |
-		XRX200_DMA_DATA_LEN;
+		LTQ_DMA_OWN | XRX200_DMA_DATA_LEN;
 
 	return ret;
 }
