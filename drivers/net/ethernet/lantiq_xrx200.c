@@ -149,6 +149,8 @@ static int xrx200_close(struct net_device *net_dev)
 	napi_disable(&priv->chan_tx.napi);
 	ltq_dma_close(&priv->chan_tx.dma);
 
+	netdev_reset_queue(net_dev);
+
 	return 0;
 }
 
