@@ -210,6 +210,7 @@ static int xrx200_hw_receive(struct xrx200_chan *ch)
 	}
 
 	skb_put(skb, len);
+	skb_dump(KERN_INFO, skb, true);
 	skb->protocol = eth_type_trans(skb, net_dev);
 	netif_receive_skb(skb);
 	net_dev->stats.rx_packets++;
