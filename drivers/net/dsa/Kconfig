@@ -34,6 +34,14 @@ config NET_DSA_LANTIQ_GSWIP
 	  This enables support for the Lantiq / Intel GSWIP 2.1 found in
 	  the xrx200 / VR9 SoC.
 
+config NET_DSA_LANTIQ_TANTOS
+	tristate "Lantiq Tantos"
+	depends on HAS_IOMEM
+	select NET_DSA_TAG_TANTOS
+	help
+	  This enables support for the Lantiq Tantos switch found in
+	  the arx100 / AR9 SoC.
+
 config NET_DSA_MT7530
 	tristate "MediaTek MT7530 and MT7531 Ethernet switch support"
 	select NET_DSA_TAG_MTK
