@@ -940,6 +940,8 @@ static const struct mips_perf_event mipsxxcore_event_map
 	[PERF_COUNT_HW_INSTRUCTIONS] = { 0x01, CNTR_EVEN | CNTR_ODD, T },
 	[PERF_COUNT_HW_BRANCH_INSTRUCTIONS] = { 0x02, CNTR_EVEN, T },
 	[PERF_COUNT_HW_BRANCH_MISSES] = { 0x02, CNTR_ODD, T },
+	[PERF_COUNT_HW_STALLED_CYCLES_FRONTEND] = { 0x19, CNTR_EVEN, P },
+	[PERF_COUNT_HW_STALLED_CYCLES_BACKEND] = { 0x19, CNTR_ODD, P },
 };
 
 /* 74K/proAptiv core has different branch event code. */
