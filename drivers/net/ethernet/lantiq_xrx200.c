@@ -312,11 +312,6 @@ static netdev_tx_t xrx200_start_xmit(struct sk_buff *skb,
 	int len;
 
 	skb->dev = net_dev;
-	if (skb_put_padto(skb, ETH_ZLEN)) {
-		net_dev->stats.tx_dropped++;
-		return NETDEV_TX_OK;
-	}
-
 	len = skb->len;
 
 	if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) || ch->skb[ch->dma.desc]) {
