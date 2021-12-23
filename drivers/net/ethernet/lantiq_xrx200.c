@@ -565,7 +565,7 @@ static int xrx200_probe(struct platform_device *pdev)
 
 	net_dev->netdev_ops = &xrx200_netdev_ops;
 	SET_NETDEV_DEV(net_dev, dev);
-	net_dev->min_mtu = ETH_ZLEN;
+	net_dev->min_mtu = ETH_ZLEN - VLAN_ETH_HLEN;
 	net_dev->max_mtu = XRX200_DMA_DATA_LEN - xrx200_max_frame_len(0);
 	priv->rx_buf_size = xrx200_buffer_size(ETH_DATA_LEN);
 	priv->rx_skb_size = xrx200_skb_size(priv->rx_buf_size);
