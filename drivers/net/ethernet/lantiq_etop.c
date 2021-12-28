@@ -20,6 +20,7 @@
 #include <linux/mm.h>
 #include <linux/platform_device.h>
 #include <linux/ethtool.h>
+#include <linux/if_vlan.h>
 #include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/io.h>
@@ -519,11 +520,14 @@ ltq_etop_change_mtu(struct net_device *dev, int new_mtu)
 {
 	struct ltq_etop_priv *priv = netdev_priv(dev);
 	unsigned long flags;
+	int max;
 
 	dev->mtu = new_mtu;
 
+	max = ETH_HLEN + VLAN_HLEN + new_mtu + ETH_FCS_LEN;
+
 	spin_lock_irqsave(&priv->lock, flags);
-	ltq_etop_w32((ETOP_PLEN_UNDER << 16) | new_mtu, LTQ_ETOP_IGPLEN);
+	ltq_etop_w32((ETOP_PLEN_UNDER << 16) | max, LTQ_ETOP_IGPLEN);
 	spin_unlock_irqrestore(&priv->lock, flags);
 
 	return 0;
