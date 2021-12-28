@@ -25,11 +25,11 @@
 #include <linux/io.h>
 #include <linux/dma-mapping.h>
 #include <linux/module.h>
+#include <linux/clk.h>
 #include <linux/property.h>
 
 #include <asm/checksum.h>
 
-#include <lantiq_soc.h>
 #include <xway_dma.h>
 #include <lantiq_platform.h>
 
@@ -101,6 +101,8 @@ struct ltq_etop_priv {
 	int rx_burst_len;
 
 	spinlock_t lock;
+
+	struct clk *clk_ppe;
 };
 
 static int
@@ -230,7 +232,7 @@ ltq_etop_hw_exit(struct net_device *dev)
 	struct ltq_etop_priv *priv = netdev_priv(dev);
 	int i;
 
-	ltq_pmu_disable(PMU_PPE);
+	clk_disable(priv->clk_ppe);
 	for (i = 0; i < MAX_DMA_CHAN; i++)
 		if (IS_TX(i) || IS_RX(i))
 			ltq_etop_free_channel(dev, &priv->ch[i]);
@@ -243,7 +245,7 @@ ltq_etop_hw_init(struct net_device *dev)
 	int i;
 	int err;
 
-	ltq_pmu_enable(PMU_PPE);
+	clk_enable(priv->clk_ppe);
 
 	switch (priv->pldata->mii_mode) {
 	case PHY_INTERFACE_MODE_RMII:
@@ -684,6 +686,11 @@ ltq_etop_probe(struct platform_device *pdev)
 	priv->pdev = pdev;
 	priv->pldata = dev_get_platdata(&pdev->dev);
 	priv->netdev = dev;
+
+	priv->clk_ppe = clk_get(&pdev->dev, NULL);
+	if (IS_ERR(priv->clk_ppe))
+		return PTR_ERR(priv->clk_ppe);
+
 	spin_lock_init(&priv->lock);
 	SET_NETDEV_DEV(dev, &pdev->dev);
 

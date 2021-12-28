@@ -98,6 +98,7 @@ static u32 pmu_clk_cr_b[] = {
 #define PMU_EBU		BIT(10)
 #define PMU_STP		BIT(11)
 #define PMU_GPT		BIT(12)
+#define PMU_PPE		BIT(13)
 #define PMU_AHBS	BIT(13) /* vr9 */
 #define PMU_FPI		BIT(14)
 #define PMU_AHBM	BIT(15)
@@ -155,36 +156,6 @@ static u32 ifccr = CGU_IFCCR;
 static u32 pcicr = CGU_PCICR;
 
 static DEFINE_SPINLOCK(g_pmu_lock);
-
-/* legacy function kept alive to ease clkdev transition */
-void ltq_pmu_enable(unsigned int module)
-{
-	int retry = 1000000;
-
-	spin_lock(&g_pmu_lock);
-	pmu_w32(pmu_r32(PMU_PWDCR) & ~module, PMU_PWDCR);
-	do {} while (--retry && (pmu_r32(PMU_PWDSR) & module));
-	spin_unlock(&g_pmu_lock);
-
-	if (!retry)
-		panic("activating PMU module failed!");
-}
-EXPORT_SYMBOL(ltq_pmu_enable);
-
-/* legacy function kept alive to ease clkdev transition */
-void ltq_pmu_disable(unsigned int module)
-{
-	int retry = 1000000;
-
-	spin_lock(&g_pmu_lock);
-	pmu_w32(pmu_r32(PMU_PWDCR) | module, PMU_PWDCR);
-	do {} while (--retry && (!(pmu_r32(PMU_PWDSR) & module)));
-	spin_unlock(&g_pmu_lock);
-
-	if (!retry)
-		pr_warn("deactivating PMU module failed!");
-}
-EXPORT_SYMBOL(ltq_pmu_disable);
 
 /* enable a hw clock */
 static int cgu_enable(struct clk *clk)
