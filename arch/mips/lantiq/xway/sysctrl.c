@@ -98,6 +98,7 @@ static u32 pmu_clk_cr_b[] = {
 #define PMU_EBU		BIT(10)
 #define PMU_STP		BIT(11)
 #define PMU_GPT		BIT(12)
+#define PMU_PPE		BIT(13)
 #define PMU_AHBS	BIT(13) /* vr9 */
 #define PMU_FPI		BIT(14)
 #define PMU_AHBM	BIT(15)
