@@ -103,6 +103,8 @@ struct ltq_etop_priv {
 	spinlock_t lock;
 
 	struct clk *clk_ppe;
+	struct clk *clk_ephy;
+	struct clk *clk_ephycgu;
 };
 
 static int
@@ -233,6 +235,12 @@ ltq_etop_hw_exit(struct net_device *dev)
 	int i;
 
 	clk_disable(priv->clk_ppe);
+
+	if (of_machine_is_compatible("lantiq,ase")) {
+		clk_disable(priv->clk_ephy);
+		clk_disable(priv->clk_ephycgu);
+	}
+
 	for (i = 0; i < MAX_DMA_CHAN; i++)
 		if (IS_TX(i) || IS_RX(i))
 			ltq_etop_free_channel(dev, &priv->ch[i]);
@@ -259,6 +267,11 @@ ltq_etop_hw_init(struct net_device *dev)
 		break;
 
 	default:
+		if (of_machine_is_compatible("lantiq,ase")) {
+			clk_enable(priv->clk_ephy);
+			/* enable clock for internal PHY */
+			clk_enable(priv->clk_ephycgu);
+		}
 		netdev_err(dev, "unknown mii mode %d\n",
 			   priv->pldata->mii_mode);
 		return -ENOTSUPP;
@@ -690,6 +703,14 @@ ltq_etop_probe(struct platform_device *pdev)
 	priv->clk_ppe = clk_get(&pdev->dev, NULL);
 	if (IS_ERR(priv->clk_ppe))
 		return PTR_ERR(priv->clk_ppe);
+	if (of_machine_is_compatible("lantiq,ase")) {
+		priv->clk_ephy = clk_get(&pdev->dev, "ephy");
+		if (IS_ERR(priv->clk_ephy))
+			return PTR_ERR(priv->clk_ephy);
+		priv->clk_ephycgu = clk_get(&pdev->dev, "ephycgu");
+		if (IS_ERR(priv->clk_ephycgu))
+			return PTR_ERR(priv->clk_ephycgu);
+	}
 
 	spin_lock_init(&priv->lock);
 	SET_NETDEV_DEV(dev, &pdev->dev);
