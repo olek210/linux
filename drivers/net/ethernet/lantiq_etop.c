@@ -114,8 +114,6 @@ ltq_etop_alloc_skb(struct ltq_etop_chan *ch)
 	ch->dma.desc_base[ch->dma.desc].addr =
 		dma_map_single(&priv->pdev->dev, ch->skb[ch->dma.desc]->data,
 			       MAX_DMA_DATA_LEN, DMA_FROM_DEVICE);
-	ch->dma.desc_base[ch->dma.desc].addr =
-		CPHYSADDR(ch->skb[ch->dma.desc]->data);
 	ch->dma.desc_base[ch->dma.desc].ctl =
 		LTQ_DMA_OWN | LTQ_DMA_RX_OFFSET(NET_IP_ALIGN) |
 		MAX_DMA_DATA_LEN;
