@@ -192,7 +192,7 @@ static int xrx200_alloc_buf(struct xrx200_chan *ch, void *(*alloc)(unsigned int 
 	int ret = 0;
 
 	ch->rx_buff[ch->dma.desc] = alloc(priv->rx_skb_size);
-	if (!ch->rx_buff[ch->dma.desc]) {
+	if (unlikely(!ch->rx_buff[ch->dma.desc])) {
 		ret = -ENOMEM;
 		goto skip;
 	}
@@ -232,7 +232,7 @@ static int xrx200_hw_receive(struct xrx200_chan *ch)
 	ch->dma.desc++;
 	ch->dma.desc %= LTQ_DESC_NUM;
 
-	if (ret) {
+	if (unlikely(ret)) {
 		net_dev->stats.rx_dropped++;
 		netdev_err(net_dev, "failed to allocate new rx buffer\n");
 		return ret;
@@ -243,11 +243,11 @@ static int xrx200_hw_receive(struct xrx200_chan *ch)
 	skb_put(skb, len);
 
 	/* add buffers to skb via skb->frag_list */
-	if (ctl & LTQ_DMA_SOP) {
+	if (likely(ctl & LTQ_DMA_SOP)) {
 		ch->skb_head = skb;
 		ch->skb_tail = skb;
 		skb_reserve(skb, NET_IP_ALIGN);
-	} else if (ch->skb_head) {
+	} else if (unlikely(ch->skb_head)) {
 		if (ch->skb_head == ch->skb_tail)
 			skb_shinfo(ch->skb_tail)->frag_list = skb;
 		else
@@ -258,7 +258,7 @@ static int xrx200_hw_receive(struct xrx200_chan *ch)
 		ch->skb_head->truesize += skb->truesize;
 	}
 
-	if (ctl & LTQ_DMA_EOP) {
+	if (likely(ctl & LTQ_DMA_EOP)) {
 		ch->skb_head->protocol = eth_type_trans(ch->skb_head, net_dev);
 		netif_receive_skb(ch->skb_head);
 		net_dev->stats.rx_packets++;
@@ -280,14 +280,14 @@ static int xrx200_poll_rx(struct napi_struct *napi, int budget)
 	int rx = 0;
 	int ret;
 
-	while (rx < budget) {
+	while (likely(rx < budget)) {
 		struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
 
-		if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) == LTQ_DMA_C) {
+		if (likely((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) == LTQ_DMA_C)) {
 			ret = xrx200_hw_receive(ch);
-			if (ret == XRX200_DMA_PACKET_IN_PROGRESS)
+			if (unlikely(ret == XRX200_DMA_PACKET_IN_PROGRESS))
 				continue;
-			if (ret != XRX200_DMA_PACKET_COMPLETE)
+			if (likely(ret != XRX200_DMA_PACKET_COMPLETE))
 				return ret;
 			rx++;
 		} else {
@@ -295,7 +295,7 @@ static int xrx200_poll_rx(struct napi_struct *napi, int budget)
 		}
 	}
 
-	if (rx < budget) {
+	if (unlikely(rx < budget)) {
 		if (napi_complete_done(&ch->napi, rx))
 			ltq_dma_enable_irq(&ch->dma);
 	}
@@ -312,10 +312,10 @@ static int xrx200_tx_housekeeping(struct napi_struct *napi, int budget)
 	int bytes = 0;
 
 	netif_tx_lock(net_dev);
-	while (pkts < budget) {
+	while (likely(pkts < budget)) {
 		struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->tx_free];
 
-		if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) == LTQ_DMA_C) {
+		if (likely((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) == LTQ_DMA_C)) {
 			struct sk_buff *skb = ch->skb[ch->tx_free];
 
 			pkts++;
@@ -336,10 +336,10 @@ static int xrx200_tx_housekeeping(struct napi_struct *napi, int budget)
 	netdev_completed_queue(ch->priv->net_dev, pkts, bytes);
 
 	netif_tx_unlock(net_dev);
-	if (netif_queue_stopped(net_dev))
+	if (likely(netif_queue_stopped(net_dev)))
 		netif_wake_queue(net_dev);
 
-	if (pkts < budget) {
+	if (unlikely(pkts < budget)) {
 		if (napi_complete_done(&ch->napi, pkts))
 			ltq_dma_enable_irq(&ch->dma);
 	}
@@ -358,14 +358,14 @@ static netdev_tx_t xrx200_start_xmit(struct sk_buff *skb,
 	int len;
 
 	skb->dev = net_dev;
-	if (skb_put_padto(skb, ETH_ZLEN)) {
+	if (unlikely(skb_put_padto(skb, ETH_ZLEN))) {
 		net_dev->stats.tx_dropped++;
 		return NETDEV_TX_OK;
 	}
 
 	len = skb->len;
 
-	if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) || ch->skb[ch->dma.desc]) {
+	if (unlikely((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) || ch->skb[ch->dma.desc])) {
 		netdev_err(net_dev, "tx ring full\n");
 		netif_stop_queue(net_dev);
 		return NETDEV_TX_BUSY;
@@ -387,7 +387,7 @@ static netdev_tx_t xrx200_start_xmit(struct sk_buff *skb,
 		LTQ_DMA_TX_OFFSET(byte_offset) | (len & LTQ_DMA_SIZE_MASK);
 	ch->dma.desc++;
 	ch->dma.desc %= LTQ_DESC_NUM;
-	if (ch->dma.desc == ch->tx_free)
+	if (likely(ch->dma.desc == ch->tx_free))
 		netif_stop_queue(net_dev);
 
 	netdev_sent_queue(net_dev, len);
