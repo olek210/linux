@@ -238,7 +238,7 @@ static int xrx200_hw_receive(struct xrx200_chan *ch)
 		return ret;
 	}
 
-	skb = build_skb(buf, priv->rx_skb_size);
+	skb = napi_build_skb(buf, priv->rx_skb_size);
 	skb_reserve(skb, NET_SKB_PAD);
 	skb_put(skb, len);
 
@@ -321,7 +321,7 @@ static int xrx200_tx_housekeeping(struct napi_struct *napi, int budget)
 			pkts++;
 			bytes += skb->len;
 			ch->skb[ch->tx_free] = NULL;
-			consume_skb(skb);
+			napi_consume_skb(skb, budget);
 			memset(&ch->dma.desc_base[ch->tx_free], 0,
 			       sizeof(struct ltq_dma_desc));
 			ch->tx_free++;
