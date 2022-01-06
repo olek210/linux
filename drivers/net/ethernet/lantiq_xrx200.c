@@ -59,10 +59,11 @@
 #define PMAC_HD_CTL_FC		BIT(10)
 
 struct xrx200_chan {
-	int tx_free;
-
+	/* "Hot" fields in the data path. */
 	struct napi_struct napi;
 	struct ltq_dma_channel dma;
+
+	int tx_free;
 
 	union {
 		struct sk_buff *skb[LTQ_DESC_NUM];
@@ -76,10 +77,11 @@ struct xrx200_chan {
 };
 
 struct xrx200_priv {
-	struct clk *clk;
-
-	struct xrx200_chan chan_tx;
-	struct xrx200_chan chan_rx;
+	/* Critical data related to the per-packet data path are clustered
+	 * early in this structure to help improve the D-cache footprint.
+	 */
+	struct xrx200_chan chan_tx ____cacheline_aligned;
+	struct xrx200_chan chan_rx ____cacheline_aligned;
 
 	u16 rx_buf_size;
 	u16 rx_skb_size;
@@ -87,7 +89,10 @@ struct xrx200_priv {
 	struct net_device *net_dev;
 	struct device *dev;
 
+	/* From this point onwards we're not looking at per-packet fields. */
 	__iomem void *pmac_reg;
+
+	struct clk *clk;
 };
 
 static u32 xrx200_pmac_r32(struct xrx200_priv *priv, u32 offset)
