@@ -33,6 +33,7 @@
 
 #define DMA_ID_CHNR		GENMASK(26, 20)	/* channel number */
 #define DMA_DESCPT		BIT(3)		/* descriptor complete irq */
+#define DMA_EOP			BIT(1)		/* packet complete irq */
 #define DMA_TX			BIT(8)		/* TX channel direction */
 #define DMA_CHAN_ON		BIT(0)		/* channel on / off bit */
 #define DMA_PDEN		BIT(6)		/* enable packet drop */
@@ -163,7 +164,7 @@ ltq_dma_alloc_rx(struct ltq_dma_channel *ch)
 	ltq_dma_alloc(ch);
 
 	spin_lock_irqsave(&ltq_dma_lock, flags);
-	ltq_dma_w32(DMA_DESCPT, LTQ_DMA_CIE);
+	ltq_dma_w32(DMA_EOP, LTQ_DMA_CIE);
 	ltq_dma_w32_mask(0, 1 << ch->nr, LTQ_DMA_IRNEN);
 	ltq_dma_w32(DMA_WEIGHT, LTQ_DMA_CCTRL);
 	spin_unlock_irqrestore(&ltq_dma_lock, flags);
