@@ -247,7 +247,7 @@ static int xrx200_hw_receive(struct xrx200_chan *ch)
 		ch->skb_head = skb;
 		ch->skb_tail = skb;
 		skb_reserve(skb, NET_IP_ALIGN);
-	} else if (ch->skb_head) {
+	} else {
 		if (ch->skb_head == ch->skb_tail)
 			skb_shinfo(ch->skb_tail)->frag_list = skb;
 		else
