@@ -40,7 +40,7 @@
 #define DMA_RESET		BIT(0)		/* channel on / off bit */
 #define DMA_IRQ_ACK		0x7e		/* IRQ status register */
 #define DMA_POLL		BIT(31)		/* turn on channel polling */
-#define DMA_CLK_DIV4		BIT(6)		/* polling clock divider */
+#define DMA_CLK_DIV4		4 << 4		/* polling clock divider */
 #define DMA_PCTRL_2W_BURST	0x1		/* 2 word burst length */
 #define DMA_PCTRL_4W_BURST	0x2		/* 4 word burst length */
 #define DMA_PCTRL_8W_BURST	0x3		/* 8 word burst length */
