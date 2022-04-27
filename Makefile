@@ -932,7 +932,7 @@ export CC_FLAGS_CFI
 endif
 
 ifdef CONFIG_DEBUG_FORCE_FUNCTION_ALIGN_64B
-KBUILD_CFLAGS += -falign-functions=64
+KBUILD_CFLAGS += -falign-functions=32
 endif
 
 # arch Makefile may override CC so keep this after arch Makefile is included
