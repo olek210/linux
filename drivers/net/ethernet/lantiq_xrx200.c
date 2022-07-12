@@ -19,6 +19,8 @@
 #include <linux/of_net.h>
 #include <linux/of_platform.h>
 
+#include <net/tso.h>
+
 #include <xway_dma.h>
 
 /* DMA */
@@ -347,6 +349,15 @@ static int xrx200_tx_housekeeping(struct napi_struct *napi, int budget)
 	return pkts;
 }
 
+static void xrx200_build_gso(struct sk_buff *skb)
+{
+	int hdr_len;
+	struct tso_t tso;
+
+	/* Initialize the TSO handler, and prepare the first payload */
+	hdr_len = tso_start(skb, &tso);
+}
+
 static netdev_tx_t xrx200_start_xmit(struct sk_buff *skb,
 				     struct net_device *net_dev)
 {
@@ -360,6 +371,12 @@ static netdev_tx_t xrx200_start_xmit(struct sk_buff *skb,
 	skb->dev = net_dev;
 	if (skb_put_padto(skb, ETH_ZLEN)) {
 		net_dev->stats.tx_dropped++;
+		return NETDEV_TX_OK;
+	}
+
+	if (skb_is_gso(skb)) {
+		xrx200_build_gso(skb);
+		netdev_err(net_dev, "TSO skb\n");
 		return NETDEV_TX_OK;
 	}
 
@@ -569,6 +586,9 @@ static int xrx200_probe(struct platform_device *pdev)
 	net_dev->max_mtu = XRX200_DMA_DATA_LEN - xrx200_max_frame_len(0);
 	priv->rx_buf_size = xrx200_buffer_size(ETH_DATA_LEN);
 	priv->rx_skb_size = xrx200_skb_size(priv->rx_buf_size);
+	net_dev->features = NETIF_F_ALL_TSO;
+	net_dev->hw_features = NETIF_F_ALL_TSO;
+	net_dev->vlan_features = NETIF_F_ALL_TSO;
 
 	/* load the memory ranges */
 	priv->pmac_reg = devm_platform_get_and_ioremap_resource(pdev, 0, NULL);
