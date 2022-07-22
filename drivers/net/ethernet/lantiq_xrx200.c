@@ -423,8 +423,9 @@ xrx200_change_mtu(struct net_device *net_dev, int new_mtu)
 	priv->rx_buf_size = xrx200_buffer_size(new_mtu);
 	priv->rx_skb_size = xrx200_skb_size(priv->rx_buf_size);
 
-	if (new_mtu <= old_mtu)
-		return ret;
+	printk(KERN_ERR "NET_SKB_PAD=%d, NET_IP_ALIGN=%d\n", NET_SKB_PAD, NET_IP_ALIGN);
+	printk(KERN_ERR "SKB_DATA_ALIGN=%d shared_info=%d\n", SKB_DATA_ALIGN(1), sizeof(struct skb_shared_info));
+	printk(KERN_ERR "rx_buf_size=%d, rx_skb_size=%d\n", priv->rx_buf_size, priv->rx_skb_size);
 
 	running = netif_running(net_dev);
 	if (running) {
@@ -440,6 +441,7 @@ xrx200_change_mtu(struct net_device *net_dev, int new_mtu)
 		buff = ch_rx->rx_buff[ch_rx->dma.desc];
 		ret = xrx200_alloc_buf(ch_rx, netdev_alloc_frag);
 		if (ret) {
+			netdev_err(net_dev, "failed to allocate new rx buffer\n");
 			net_dev->mtu = old_mtu;
 			priv->rx_buf_size = xrx200_buffer_size(old_mtu);
 			priv->rx_skb_size = xrx200_skb_size(priv->rx_buf_size);
