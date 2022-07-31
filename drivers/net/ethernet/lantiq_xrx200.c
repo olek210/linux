@@ -84,6 +84,8 @@ struct xrx200_priv {
 	u16 rx_buf_size;
 	u16 rx_skb_size;
 
+	int enomem;
+
 	struct net_device *net_dev;
 	struct device *dev;
 
@@ -188,19 +190,29 @@ static int xrx200_alloc_buf(struct xrx200_chan *ch, void *(*alloc)(unsigned int 
 {
 	void *buf = ch->rx_buff[ch->dma.desc];
 	struct xrx200_priv *priv = ch->priv;
+	struct net_device *net_dev = priv->net_dev;
 	dma_addr_t mapping;
 	int ret = 0;
 
-	ch->rx_buff[ch->dma.desc] = alloc(priv->rx_skb_size);
+	if((priv->enomem++ % 66161) == 0)
+		ch->rx_buff[ch->dma.desc] = NULL;
+	else
+		ch->rx_buff[ch->dma.desc] = alloc(priv->rx_skb_size);
+
 	if (!ch->rx_buff[ch->dma.desc]) {
 		ch->rx_buff[ch->dma.desc] = buf;
+		netdev_err(net_dev, "failed to allocate memory\n");
 		ret = -ENOMEM;
 		goto skip;
 	}
 
-	mapping = dma_map_single(priv->dev, ch->rx_buff[ch->dma.desc],
-				 priv->rx_buf_size, DMA_FROM_DEVICE);
+	if ((priv->enomem++ % 98689) == 0)
+		mapping = DMA_MAPPING_ERROR;
+	else
+		mapping = dma_map_single(priv->dev, ch->rx_buff[ch->dma.desc],
+					 priv->rx_buf_size, DMA_FROM_DEVICE);
 	if (unlikely(dma_mapping_error(priv->dev, mapping))) {
+		netdev_err(net_dev, "failed to map memory\n");
 		skb_free_frag(ch->rx_buff[ch->dma.desc]);
 		ch->rx_buff[ch->dma.desc] = buf;
 		ret = -ENOMEM;
@@ -239,7 +251,11 @@ static int xrx200_hw_receive(struct xrx200_chan *ch)
 		return ret;
 	}
 
-	skb = napi_build_skb(buf, priv->rx_skb_size);
+	if ((priv->enomem++ % 32423) == 0)
+		skb = NULL;
+	else
+		skb = napi_build_skb(buf, priv->rx_skb_size);
+
 	if (!skb) {
 		skb_free_frag(buf);
 		net_dev->stats.rx_dropped++;
@@ -569,6 +585,8 @@ static int xrx200_probe(struct platform_device *pdev)
 	priv = netdev_priv(net_dev);
 	priv->net_dev = net_dev;
 	priv->dev = dev;
+
+	priv->enomem = 1;
 
 	net_dev->netdev_ops = &xrx200_netdev_ops;
 	SET_NETDEV_DEV(net_dev, dev);
