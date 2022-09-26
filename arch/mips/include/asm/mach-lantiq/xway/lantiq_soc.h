@@ -90,10 +90,6 @@ extern __iomem void *ltq_cgu_membase;
 /* WDT */
 #define LTQ_RST_CAUSE_WDTRST	0x20
 
-/* MPS - multi processor unit (voice) */
-#define LTQ_MPS_BASE_ADDR	(KSEG1 + 0x1F107000)
-#define LTQ_MPS_CHIPID		((u32 *)(LTQ_MPS_BASE_ADDR + 0x0344))
-
 /* allow booting xrx200 phys */
 int xrx200_gphy_boot(struct device *dev, unsigned int id, dma_addr_t dev_addr);
 

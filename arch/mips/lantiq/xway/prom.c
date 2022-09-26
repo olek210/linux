@@ -33,11 +33,6 @@
 #define COMP_AR10	"lantiq,ar10"
 #define COMP_GRX390	"lantiq,grx390"
 
-#define PART_SHIFT	12
-#define PART_MASK	0x0FFFFFFF
-#define REV_SHIFT	28
-#define REV_MASK	0xF0000000
-
 void __init ltq_soc_detect(struct ltq_soc_info *i)
 {
 	i->partnum = (ltq_r32(LTQ_MPS_CHIPID) & PART_MASK) >> PART_SHIFT;
