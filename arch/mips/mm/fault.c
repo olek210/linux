@@ -18,6 +18,7 @@
 #include <linux/mman.h>
 #include <linux/mm.h>
 #include <linux/smp.h>
+#include <linux/kfence.h>
 #include <linux/kprobes.h>
 #include <linux/perf_event.h>
 #include <linux/uaccess.h>
@@ -231,6 +232,8 @@ no_context:
 		return;
 	}
 
+	if (kfence_handle_page_fault(address, (((regs->cp0_cause >> 2) & 0x1f) == EXCCODE_ADES), regs))
+		return;
 	/*
 	 * Oops. The kernel tried to access some bad page. We'll have to
 	 * terminate things with extreme prejudice.
