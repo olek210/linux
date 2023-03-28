@@ -88,8 +88,8 @@ static int ltq_cputemp_probe(struct platform_device *pdev)
 	struct device *hwmon_dev;
 	int err = 0;
 
-	/* available on vr9 v1.2 SoCs only */
-	if (ltq_soc_type() != SOC_TYPE_VR9_2)
+	/* available on xRX200 v1.2 SoCs only */
+	if (ltq_soc_type() != SOC_TYPE_XRX200_2)
 		return -ENODEV;
 
 	err = devm_add_action(&pdev->dev, ltq_cputemp_disable, NULL);
