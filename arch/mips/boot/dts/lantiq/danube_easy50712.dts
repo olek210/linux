@@ -4,6 +4,9 @@
 /include/ "danube.dtsi"
 
 / {
+	compatible = "lantiq,easy50712", "lantiq,danube";
+	model = "Lantiq EASY50712 Nand";
+
 	chosen {
 		bootargs = "console=ttyLTQ0,115200 init=/etc/preinit";
 	};
