@@ -57,15 +57,9 @@
 #define  ARX100_RGMII_CTL_IS_REVMIIp(p)	(0x2 << (((p) * 10) + 8))
 #define  ARX100_RGMII_CTL_IS_RMIIp(p)	(0x3 << (((p) * 10) + 8))
 #define  ARX100_RGMII_CTL_RXDLY_MASKp(p)	(0x3 << (((p) * 10) + 6))
-#define  ARX100_RGMII_CTL_RXDLY_0p(p)		(0x0 << (((p) * 10) + 6))
-#define  ARX100_RGMII_CTL_RXDLY_1_5p(p)		(0x1 << (((p) * 10) + 6))
-#define  ARX100_RGMII_CTL_RXDLY_1_75p(p)	(0x2 << (((p) * 10) + 6))
-#define  ARX100_RGMII_CTL_RXDLY_2p(p)		(0x3 << (((p) * 10) + 6))
+#define  ARX100_RGMII_CTL_RXDLYp(p, val)	(((val - 1250) / 250) << (((p) * 10) + 6))
 #define  ARX100_RGMII_CTL_TXDLY_MASKp(p)	(0x3 << (((p) * 10) + 4))
-#define  ARX100_RGMII_CTL_TXDLY_0p(p)		(0x0 << (((p) * 10) + 4))
-#define  ARX100_RGMII_CTL_TXDLY_1_5p(p)		(0x1 << (((p) * 10) + 4))
-#define  ARX100_RGMII_CTL_TXDLY_1_75p(p)	(0x2 << (((p) * 10) + 4))
-#define  ARX100_RGMII_CTL_TXDLY_2p(p)		(0x3 << (((p) * 10) + 4))
+#define  ARX100_RGMII_CTL_TXDLYp(p, val)	(((val - 1250) / 250) << (((p) * 10) + 4))
 #define  ARX100_RGMII_CTL_SPD_MASKp(p)	(0x3 << (((p) * 10) + 2))
 #define  ARX100_RGMII_CTL_SPD_10p(p)	(0x0 << (((p) * 10) + 2))
 #define  ARX100_RGMII_CTL_SPD_100p(p)	(0x1 << (((p) * 10) + 2))
@@ -100,6 +94,7 @@
 #define ARX100_MDIO_DATA		0x004
 #define  ARX100_MDIO_DATA_RD_MASK	GENMASK(15, 0)
 
+#define ARX100_MAX_PORTS		3
 #define TANTOS_MAX_PACKET_LENGTH	1536
 
 struct tantos_hw_info {
@@ -115,6 +110,8 @@ struct tantos_priv {
 	const struct tantos_hw_info *hw_info;
 	struct dsa_switch *ds;
 	struct device *dev;
+	u32 rgmii_rx_delay[ARX100_MAX_PORTS];
+	u32 rgmii_tx_delay[ARX100_MAX_PORTS];
 };
 
 struct tantos_rmon_cnt_desc {
@@ -304,6 +301,9 @@ static int tantos_setup(struct dsa_switch *ds)
 	struct tantos_priv *priv = ds->priv;
 	unsigned int cpu_port = priv->hw_info->cpu_port;
 	int i;
+
+	/* Parse CPU port config to be later used in phy_link mac_config */
+	tantos_parse_port_config(priv);
 
 	/* Enable switch */
 	tantos_switch_mask(priv, 0, ARX100_GCTL0_SE, ARX100_GCTL0);
@@ -507,6 +507,58 @@ unsupported:
 }
 #endif
 
+static void tantos_parse_port_config(struct tantos_priv *priv)
+{
+	struct device_node *port_dn;
+	phy_interface_t mode;
+	struct dsa_port *dp;
+	u32 delay;
+	int port;
+
+	for (port = 0; port < ARX100_MAX_PORTS; port++) {
+
+		dp = dsa_to_port(priv->ds, port);
+		port_dn = dp->dn;
+
+		if (!of_device_is_available(port_dn))
+			continue;
+
+		ret = of_get_phy_mode(port_dn, &mode);
+		if (ret)
+			continue;
+
+		// TODO: Set only single delay
+		switch (mode) {
+		case PHY_INTERFACE_MODE_RGMII_ID:
+		case PHY_INTERFACE_MODE_RGMII_RXID:
+		case PHY_INTERFACE_MODE_RGMII_TXID:
+			delay = 0;
+
+			of_property_read_u32(port_dn, "rx-internal-delay-ps", &delay)
+
+			if (delay != 1500 && delay != 1750 && delay != 2000)
+				dev_err(priv->dev, "rgmii rx delay is limited to values 1.5, 1.75 and 2.0 ns");
+
+			priv->rgmii_rx_delay[port] = delay;
+
+			delay = 0;
+
+			of_property_read_u32(port_dn, "tx-internal-delay-ps", &delay)
+
+			if (delay != 1500 && delay != 1750 && delay != 2000)
+				dev_err(priv->dev, "rgmii tx delay is limited to values 1.5, 1.75 and 2.0 ns");
+
+			priv->rgmii_tx_delay[port] = delay;
+
+			break;
+		default:
+			continue;
+		}
+	}
+
+	return 0
+}
+
 static void tantos_phylink_mac_config(struct dsa_switch *ds, int port,
 				      unsigned int mode,
 				      const struct phylink_link_state *state)
@@ -536,30 +588,24 @@ static void tantos_phylink_mac_config(struct dsa_switch *ds, int port,
 		return;
 	}
 
-	tantos_switch_mask(priv, ARX100_RGMII_CTL_IS_MASKp(port), ctl, ARX100_RGMII_CTL);
-
 	switch (state->interface) {
-	case PHY_INTERFACE_MODE_RGMII:
-		tantos_switch_mask(priv, ARX100_RGMII_CTL_TXDLY_MASKp(port) |
-				   ARX100_RGMII_CTL_RXDLY_MASKp(port), 0, ARX100_RGMII_CTL);
-		break;
 	case PHY_INTERFACE_MODE_RGMII_ID:
-		tantos_switch_mask(priv, ARX100_RGMII_CTL_TXDLY_MASKp(port) |
-				   ARX100_RGMII_CTL_RXDLY_MASKp(port),
-				   ARX100_RGMII_CTL_TXDLY_1_75p(port) |
-				   ARX100_RGMII_CTL_RXDLY_1_75p(port), ARX100_RGMII_CTL);
+		ctl = ARX100_RGMII_CTL_RXDLYp(port, priv->rgmii_rx_delay[port]) |
+			ARX100_RGMII_CTL_TXDLYp(port, priv->rgmii_tx_delay[port]);
 		break;
 	case PHY_INTERFACE_MODE_RGMII_RXID:
-		tantos_switch_mask(priv, ARX100_RGMII_CTL_RXDLY_MASKp(port),
-				   ARX100_RGMII_CTL_RXDLY_1_75p(port), ARX100_RGMII_CTL);
+		ctl = ARX100_RGMII_CTL_RXDLYp(port, priv->rgmii_rx_delay[port]);
 		break;
 	case PHY_INTERFACE_MODE_RGMII_TXID:
-		tantos_switch_mask(priv, ARX100_RGMII_CTL_TXDLY_MASKp(port),
-				   ARX100_RGMII_CTL_TXDLY_1_75p(port), ARX100_RGMII_CTL);
+		ctl = ARX100_RGMII_CTL_TXDLYp(port, priv->rgmii_tx_delay[port]);
 		break;
 	default:
 		break;
 	}
+
+	tantos_switch_mask(priv, ARX100_RGMII_CTL_IS_MASKp(port) | ARX100_RGMII_CTL_RXDLY_MASKp(port) |
+		ARX100_RGMII_CTL_TXDLY_MASPp(port), ctl, ARX100_RGMII_CTL);
+
 }
 
 static void tantos_phylink_mac_link_down(struct dsa_switch *ds, int port,
@@ -780,7 +826,7 @@ static void tantos_shutdown(struct platform_device *pdev)
 }
 
 static const struct tantos_hw_info tantos_arx100 = {
-	.max_ports = 3,
+	.max_ports = ARX100_MAX_PORTS,
 	.cpu_port = 2,
 	.ops = &tantos_arx100_switch_ops,
 };
