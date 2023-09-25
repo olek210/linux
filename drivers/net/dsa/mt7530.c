@@ -1536,6 +1536,9 @@ mt7530_port_fdb_add(struct dsa_switch *ds, int port,
 	int ret;
 	u8 port_mask = BIT(port);
 
+	printk(KERN_ERR "%s port=%d, addr=%02hx:%02hx:%02hx:%02hx:%02hx:%02hx, vid=%u\n", __func__, port, addr[0],
+			addr[1], addr[2], addr[3], addr[4], addr[5], vid);
+
 	mutex_lock(&priv->reg_mutex);
 	mt7530_fdb_write(priv, vid, port_mask, addr, -1, STATIC_ENT);
 	ret = mt7530_fdb_cmd(priv, MT7530_FDB_WRITE, NULL);
@@ -1552,6 +1555,9 @@ mt7530_port_fdb_del(struct dsa_switch *ds, int port,
 	struct mt7530_priv *priv = ds->priv;
 	int ret;
 	u8 port_mask = BIT(port);
+
+	printk(KERN_ERR "%s port=%d, addr=%02hx:%02hx:%02hx:%02hx:%02hx:%02hx, vid=%u\n", __func__, port, addr[0],
+			addr[1], addr[2], addr[3], addr[4], addr[5], vid);
 
 	mutex_lock(&priv->reg_mutex);
 	mt7530_fdb_write(priv, vid, port_mask, addr, -1, STATIC_EMP);
@@ -1571,6 +1577,8 @@ mt7530_port_fdb_dump(struct dsa_switch *ds, int port,
 	int ret = 0;
 	u32 rsp = 0;
 
+	printk(KERN_ERR "%s port=%d\n", __func__, port);
+
 	mutex_lock(&priv->reg_mutex);
 
 	ret = mt7530_fdb_cmd(priv, MT7530_FDB_START, &rsp);
@@ -1581,6 +1589,8 @@ mt7530_port_fdb_dump(struct dsa_switch *ds, int port,
 		if (rsp & ATC_SRCH_HIT) {
 			mt7530_fdb_read(priv, &_fdb);
 			if (_fdb.port_mask & BIT(port)) {
+				printk(KERN_ERR "%s port=%d, addr=%02hx:%02hx:%02hx:%02hx:%02hx:%02hx, vid=%u, port_mask=%02x, aging=%u, noarp=%u\n", __func__, port, _fdb.mac[0],
+						_fdb.mac[1], _fdb.mac[2], _fdb.mac[3], _fdb.mac[4], _fdb.mac[5], _fdb.vid, _fdb.port_mask, _fdb.aging, _fdb.noarp);
 				ret = cb(_fdb.mac, _fdb.vid, _fdb.noarp,
 					 data);
 				if (ret < 0)
@@ -1592,6 +1602,27 @@ mt7530_port_fdb_dump(struct dsa_switch *ds, int port,
 		 !mt7530_fdb_cmd(priv, MT7530_FDB_NEXT, &rsp));
 err:
 	mutex_unlock(&priv->reg_mutex);
+
+	return 0;
+}
+
+static int
+mt7530_lag_fdb_add(struct dsa_switch *ds, struct dsa_lag lag,
+		   const unsigned char *addr, u16 vid,
+		   struct dsa_db db)
+{
+
+	printk(KERN_ERR "%s\n", __func__);
+
+	return 0;
+}
+
+static int
+mt7530_lag_fdb_del(struct dsa_switch *ds, struct dsa_lag lag,
+		   const unsigned char *addr, u16 vid,
+		   struct dsa_db db)
+{
+	printk(KERN_ERR "%s\n", __func__);
 
 	return 0;
 }
@@ -3218,6 +3249,8 @@ int mt753x_port_lag_join(struct dsa_switch *ds, int port, struct dsa_lag lag,
 {
 	int ret;
 
+	printk(KERN_ERR "%s: port=%d\n", __func__, port);
+
 	if (!mt753x_lag_can_offload(ds, lag, info, extack))
 		return -EOPNOTSUPP;
 
@@ -3235,7 +3268,18 @@ int mt753x_port_lag_join(struct dsa_switch *ds, int port, struct dsa_lag lag,
 int mt753x_port_lag_leave(struct dsa_switch *ds, int port,
 			  struct dsa_lag lag)
 {
+	printk(KERN_ERR "%s: port=%d\n", __func__, port);
+
 	return mt753x_lag_refresh_portmap(ds, port, lag);
+}
+
+int mt753x_port_lag_change(struct dsa_switch *ds, int port)
+{
+	struct dsa_port *dp = dsa_to_port(ds, port);
+
+	printk(KERN_ERR "%s: port=%d, enabled=%d\n", __func__, port, dp->lag_tx_enabled);
+
+	return 0;
 }
 
 static int mt753x_get_mac_eee(struct dsa_switch *ds, int port,
@@ -3336,6 +3380,8 @@ const struct dsa_switch_ops mt7530_switch_ops = {
 	.port_fdb_add		= mt7530_port_fdb_add,
 	.port_fdb_del		= mt7530_port_fdb_del,
 	.port_fdb_dump		= mt7530_port_fdb_dump,
+	.lag_fdb_add		= mt7530_lag_fdb_add,
+	.lag_fdb_del		= mt7530_lag_fdb_del,
 	.port_mdb_add		= mt7530_port_mdb_add,
 	.port_mdb_del		= mt7530_port_mdb_del,
 	.port_vlan_filtering	= mt7530_port_vlan_filtering,
@@ -3346,6 +3392,7 @@ const struct dsa_switch_ops mt7530_switch_ops = {
 	.phylink_get_caps	= mt753x_phylink_get_caps,
 	.port_lag_join		= mt753x_port_lag_join,
 	.port_lag_leave		= mt753x_port_lag_leave,
+	.port_lag_change	= mt753x_port_lag_change,
 	.get_mac_eee		= mt753x_get_mac_eee,
 	.set_mac_eee		= mt753x_set_mac_eee,
 	.conduit_state_change	= mt753x_conduit_state_change,
