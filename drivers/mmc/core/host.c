@@ -255,6 +255,8 @@ mmc_of_parse_clk_phase(struct mmc_host *host, struct mmc_clk_phase_map *map)
 				  &map->phase[MMC_TIMING_UHS_SDR104]);
 	mmc_of_parse_timing_phase(dev, "clk-phase-uhs-ddr50",
 				  &map->phase[MMC_TIMING_UHS_DDR50]);
+	mmc_of_parse_timing_phase(dev, "clk-phase-uhs-ddr208",
+				  &map->phase[MMC_TIMING_UHS_DDR208]);
 	mmc_of_parse_timing_phase(dev, "clk-phase-mmc-ddr52",
 				  &map->phase[MMC_TIMING_MMC_DDR52]);
 	mmc_of_parse_timing_phase(dev, "clk-phase-mmc-hs200",
@@ -370,6 +372,8 @@ int mmc_of_parse(struct mmc_host *host)
 		host->caps |= MMC_CAP_UHS_SDR104;
 	if (device_property_read_bool(dev, "sd-uhs-ddr50"))
 		host->caps |= MMC_CAP_UHS_DDR50;
+	if (device_property_read_bool(dev, "sd-uhs-ddr208"))
+		host->caps |= MMC_CAP_UHS_DDR208;
 	if (device_property_read_bool(dev, "cap-power-off-card"))
 		host->caps |= MMC_CAP_POWER_OFF_CARD;
 	if (device_property_read_bool(dev, "cap-mmc-hw-reset"))

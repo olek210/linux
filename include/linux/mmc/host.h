@@ -57,12 +57,13 @@ struct mmc_ios {
 #define MMC_TIMING_UHS_SDR25	4
 #define MMC_TIMING_UHS_SDR50	5
 #define MMC_TIMING_UHS_SDR104	6
-#define MMC_TIMING_UHS_DDR50	7
-#define MMC_TIMING_MMC_DDR52	8
-#define MMC_TIMING_MMC_HS200	9
-#define MMC_TIMING_MMC_HS400	10
-#define MMC_TIMING_SD_EXP	11
-#define MMC_TIMING_SD_EXP_1_2V	12
+#define MMC_TIMING_UHS_DDR208	7
+#define MMC_TIMING_UHS_DDR50	8
+#define MMC_TIMING_MMC_DDR52	9
+#define MMC_TIMING_MMC_HS200	10
+#define MMC_TIMING_MMC_HS400	11
+#define MMC_TIMING_SD_EXP	12
+#define MMC_TIMING_SD_EXP_1_2V	13
 
 	unsigned char	signal_voltage;		/* signalling voltage (1.8V or 3.3V) */
 

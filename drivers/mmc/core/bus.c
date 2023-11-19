@@ -306,6 +306,7 @@ int mmc_add_card(struct mmc_card *card)
 		[UHS_SDR50_BUS_SPEED] = "SDR50 ",
 		[UHS_SDR104_BUS_SPEED] = "SDR104 ",
 		[UHS_DDR50_BUS_SPEED] = "DDR50 ",
+		[UHS_DDR208_BUS_SPEED] = "DDR208 ",
 	};
 
 

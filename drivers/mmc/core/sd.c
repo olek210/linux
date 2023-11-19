@@ -371,6 +371,7 @@ static int mmc_read_switch(struct mmc_card *card)
 		card->sw_caps.sd3_curr_limit = status[7] | status[6] << 8;
 	}
 
+	/* TODO: Detect DDR208 extension */
 out:
 	kfree(status);
 
@@ -461,7 +462,11 @@ static void sd_update_bus_speed_mode(struct mmc_card *card)
 		return;
 	}
 
-	if ((card->host->caps & MMC_CAP_UHS_SDR104) &&
+	/* TODO: Fixme (lower speed verification) */
+	if ((card->host->caps & MMC_CAP_UHS_DDR208) &&
+	    (card->sw_caps.sd3_bus_mode & SD_MODE_UHS_DDR208)) {
+			card->sd_bus_speed = UHS_DDR208_BUS_SPEED;
+	} else if ((card->host->caps & MMC_CAP_UHS_SDR104) &&
 	    (card->sw_caps.sd3_bus_mode & SD_MODE_UHS_SDR104)) {
 			card->sd_bus_speed = UHS_SDR104_BUS_SPEED;
 	} else if ((card->host->caps & MMC_CAP_UHS_DDR50) &&
@@ -489,6 +494,10 @@ static int sd_set_bus_speed_mode(struct mmc_card *card, u8 *status)
 	unsigned int timing = 0;
 
 	switch (card->sd_bus_speed) {
+	case UHS_DDR208_BUS_SPEED:
+		timing = MMC_TIMING_UHS_DDR208;
+		card->sw_caps.uhs_max_dtr = UHS_DDR208_MAX_DTR;
+		break;
 	case UHS_SDR104_BUS_SPEED:
 		timing = MMC_TIMING_UHS_SDR104;
 		card->sw_caps.uhs_max_dtr = UHS_SDR104_MAX_DTR;
@@ -560,13 +569,14 @@ static int sd_set_current_limit(struct mmc_card *card, u8 *status)
 	u32 max_current;
 
 	/*
-	 * Current limit switch is only defined for SDR50, SDR104, and DDR50
-	 * bus speed modes. For other bus speed modes, we do not change the
-	 * current limit.
+	 * Current limit switch is only defined for SDR50, SDR104, DDR50 and
+	 * DDR208 bus speed modes. For other bus speed modes, we do not change
+	 * the current limit.
 	 */
 	if ((card->sd_bus_speed != UHS_SDR50_BUS_SPEED) &&
 	    (card->sd_bus_speed != UHS_SDR104_BUS_SPEED) &&
-	    (card->sd_bus_speed != UHS_DDR50_BUS_SPEED))
+	    (card->sd_bus_speed != UHS_DDR50_BUS_SPEED) &&
+	    (card->sd_bus_speed != UHS_DDR208_BUS_SPEED))
 		return 0;
 
 	/*
@@ -667,7 +677,8 @@ static int mmc_sd_init_uhs_card(struct mmc_card *card)
 	if (!mmc_host_is_spi(card->host) &&
 		(card->host->ios.timing == MMC_TIMING_UHS_SDR50 ||
 		 card->host->ios.timing == MMC_TIMING_UHS_DDR50 ||
-		 card->host->ios.timing == MMC_TIMING_UHS_SDR104)) {
+		 card->host->ios.timing == MMC_TIMING_UHS_SDR104 ||
+		 card->host->ios.timing == MMC_TIMING_UHS_DDR208)) {
 		err = mmc_execute_tuning(card);
 
 		/*
@@ -679,6 +690,12 @@ static int mmc_sd_init_uhs_card(struct mmc_card *card)
 		 */
 		if (err && card->host->ios.timing == MMC_TIMING_UHS_DDR50) {
 			pr_warn("%s: ddr50 tuning failed\n",
+				mmc_hostname(card->host));
+			err = 0;
+		}
+		/* TODO: Test me */
+		if (err && card->host->ios.timing == MMC_TIMING_UHS_DDR208) {
+			pr_warn("%s: ddr208 tuning failed\n",
 				mmc_hostname(card->host));
 			err = 0;
 		}
@@ -1012,7 +1029,8 @@ static bool mmc_sd_card_using_v18(struct mmc_card *card)
 	 * 1.8V signaling.
 	 */
 	return card->sw_caps.sd3_bus_mode &
-	       (SD_MODE_UHS_SDR50 | SD_MODE_UHS_SDR104 | SD_MODE_UHS_DDR50);
+	       (SD_MODE_UHS_SDR50 | SD_MODE_UHS_SDR104 | SD_MODE_UHS_DDR50 |
+		SD_MODE_UHS_DDR208);
 }
 
 static int sd_write_ext_reg(struct mmc_card *card, u8 fno, u8 page, u16 offset,
