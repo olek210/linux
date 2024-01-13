@@ -993,7 +993,7 @@ static int tun_net_init(struct net_device *dev)
 
 	dev->hw_features = NETIF_F_SG | NETIF_F_FRAGLIST |
 			   TUN_USER_FEATURES | NETIF_F_HW_VLAN_CTAG_TX |
-			   NETIF_F_HW_VLAN_STAG_TX;
+			   NETIF_F_HW_VLAN_STAG_TX | NETIF_F_RXCSUM;
 	dev->features = dev->hw_features | NETIF_F_LLTX;
 	dev->vlan_features = dev->features &
 			     ~(NETIF_F_HW_VLAN_CTAG_TX |
@@ -1379,6 +1379,7 @@ static void tun_net_initialize(struct net_device *dev)
 
 	switch (tun->flags & TUN_TYPE_MASK) {
 	case IFF_TUN:
+		printk(KERN_ERR "Create TUN\n");
 		dev->netdev_ops = &tun_netdev_ops;
 		dev->header_ops = &ip_tunnel_header_ops;
 
@@ -1393,6 +1394,7 @@ static void tun_net_initialize(struct net_device *dev)
 		break;
 
 	case IFF_TAP:
+		printk(KERN_ERR "Create TAP\n");
 		dev->netdev_ops = &tap_netdev_ops;
 		/* Ethernet TAP Device */
 		ether_setup(dev);
