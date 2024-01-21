@@ -124,6 +124,11 @@ config NET_DSA_SMSC_LAN9303_MDIO
 	  Enable access functions if the Microchip LAN9303/LAN9354 is configured
 	  for MDIO managed mode.
 
+config NET_DSA_REALTEK_RTL8306
+	tristate "Realtek RTL8306 switch driver"
+	help
+	  Select to enable support for Realtek RTL8306 switch.
+
 config NET_DSA_VITESSE_VSC73XX
 	tristate
 	select NET_DSA_TAG_NONE
