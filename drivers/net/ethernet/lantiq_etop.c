@@ -702,7 +702,7 @@ ltq_etop_probe(struct platform_device *pdev)
 	for (i = 0; i < MAX_DMA_CHAN; i++) {
 		if (IS_TX(i))
 			netif_napi_add_weight(dev, &priv->ch[i].napi,
-					      ltq_etop_poll_tx, 8);
+					      ltq_etop_poll_tx, 16);
 		else if (IS_RX(i))
 			netif_napi_add_weight(dev, &priv->ch[i].napi,
 					      ltq_etop_poll_rx, 32);
