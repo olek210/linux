@@ -485,8 +485,9 @@ ltq_etop_tx(struct sk_buff *skb, struct net_device *dev)
 	len = skb->len < ETH_ZLEN ? ETH_ZLEN : skb->len;
 
 	if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) || ch->skb[ch->dma.desc]) {
-		netdev_err(dev, "tx ring full\n");
 		netif_tx_stop_queue(txq);
+		if (net_ratelimit())
+			netdev_err(dev, "tx ring full\n");
 		return NETDEV_TX_BUSY;
 	}
 
