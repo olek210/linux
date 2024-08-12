@@ -243,8 +243,12 @@ ltq_etop_hw_init(struct net_device *dev)
 	int i;
 	int err;
 
+	printk(KERN_ERR "%s:1\n", __func__);
 	ltq_pmu_enable(PMU_PPE);
 
+	printk(KERN_ERR "%s:2\n", __func__);
+	printk(KERN_ERR "%s:2a pldata=%p\n", __func__, priv->pldata);
+	printk(KERN_ERR "%s:2b miimode=%d\n", __func__, priv->pldata->mii_mode);
 	switch (priv->pldata->mii_mode) {
 	case PHY_INTERFACE_MODE_RMII:
 		ltq_etop_w32_mask(ETOP_MII_MASK, ETOP_MII_REVERSE,
@@ -262,11 +266,13 @@ ltq_etop_hw_init(struct net_device *dev)
 		return -ENOTSUPP;
 	}
 
+	printk(KERN_ERR "%s:3\n", __func__);
 	/* enable crc generation */
 	ltq_etop_w32(PPE32_CGEN, LQ_PPE32_ENET_MAC_CFG);
 
 	ltq_dma_init_port(DMA_PORT_ETOP, priv->tx_burst_len, priv->rx_burst_len);
 
+	printk(KERN_ERR "%s:4\n", __func__);
 	for (i = 0; i < MAX_DMA_CHAN; i++) {
 		int irq = LTQ_DMA_CH0_INT + i;
 		struct ltq_etop_chan *ch = &priv->ch[i];
@@ -301,6 +307,7 @@ ltq_etop_hw_init(struct net_device *dev)
 		}
 		ch->dma.irq = irq;
 	}
+	printk(KERN_ERR "%s:5\n", __func__);
 	return 0;
 }
 
