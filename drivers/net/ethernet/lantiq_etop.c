@@ -646,6 +646,7 @@ ltq_etop_probe(struct platform_device *pdev)
 	int err;
 	int i;
 
+	printk(KERN_ERR "%s:1\n", __func__);
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
 		dev_err(&pdev->dev, "failed to get etop resource\n");
@@ -712,6 +713,7 @@ ltq_etop_probe(struct platform_device *pdev)
 		goto err_free;
 
 	platform_set_drvdata(pdev, dev);
+	printk(KERN_ERR "%s:2\n", __func__);
 	return 0;
 
 err_free:
@@ -724,6 +726,7 @@ static void ltq_etop_remove(struct platform_device *pdev)
 {
 	struct net_device *dev = platform_get_drvdata(pdev);
 
+	printk(KERN_ERR "%s:1\n", __func__);
 	if (dev) {
 		netif_tx_stop_all_queues(dev);
 		ltq_etop_hw_exit(dev);
@@ -744,8 +747,9 @@ init_ltq_etop(void)
 {
 	int ret = platform_driver_probe(&ltq_mii_driver, ltq_etop_probe);
 
+	printk(KERN_ERR "%s:1 ret=%d\n", __func__, ret);
 	if (ret)
-		pr_err("ltq_etop: Error registering platform driver!");
+		pr_err("ltq_etop: Error registering platform driver! ret=%d", ret);
 	return ret;
 }
 
