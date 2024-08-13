@@ -20,14 +20,30 @@ properties:
     maxItems: 1
 
   interrupts:
+    minItems: 2
+    maxItems: 8
     items:
-      - description: TX interrupt
-      - description: RX interrupt
+      - description: RX interrupt Queue 0
+      - description: TX interrupt Queue 0
+      - description: RX interrupt Queue 1
+      - description: TX interrupt Queue 1
+      - description: RX interrupt Queue 2
+      - description: TX interrupt Queue 2
+      - description: RX interrupt Queue 3
+      - description: TX interrupt Queue 3
 
   interrupt-names:
+    minItems: 2
+    maxItems: 8
     items:
-      - const: tx
-      - const: rx
+      - const: rx0
+      - const: tx0
+      - const: rx1
+      - const: tx1
+      - const: rx2
+      - const: tx2
+      - const: rx3
+      - const: tx3
 
   lantiq,tx-burst-length:
     $ref: /schemas/types.yaml#/definitions/uint32
@@ -60,8 +76,8 @@ examples:
         compatible = "lantiq,etop-xway";
         reg = <0xe180000 0x40000>;
         interrupt-parent = <&icu0>;
-        interrupts = <73>, <78>;
-        interrupt-names = "tx", "rx";
+        interrupts = <72>, <73>, <74>, <75>, <76>, <77>, <78>, <79>;
+        interrupt-names = "rx0", "tx0", "rx1", "tx1", "rx2", "tx2", "rx3", "tx3";
         lantiq,tx-burst-length = <8>;
         lantiq,rx-burst-length = <8>;
         phy-mode = "rmii";

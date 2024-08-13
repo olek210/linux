@@ -86,7 +86,8 @@
 			compatible = "lantiq,etop-xway";
 			reg = <0xe180000 0x40000>;
 			interrupt-parent = <&icu0>;
-			interrupts = <73 78>;
+			interrupts = <73>, <78>;
+			interrupt-names = "tx0", "rx3";
 			phy-mode = "rmii";
 			mac-address = [ 00 11 22 33 44 55 ];
 		};
