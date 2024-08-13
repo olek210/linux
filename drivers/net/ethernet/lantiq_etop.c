@@ -62,11 +62,9 @@
 #define ETOP_PLEN_UNDER		0x40
 #define ETOP_CGEN		0x800
 
-/* use 2 static channels for TX/RX */
-#define LTQ_ETOP_TX_CHANNEL	1
-#define LTQ_ETOP_RX_CHANNEL	6
-#define IS_TX(x)		((x) == LTQ_ETOP_TX_CHANNEL)
-#define IS_RX(x)		((x) == LTQ_ETOP_RX_CHANNEL)
+/* use even channel numbers as RX, odd numbers as TX */
+#define IS_TX(x)		(((x) % 2))
+#define IS_RX(x)		(!((x) % 2))
 
 #define ltq_etop_r32(x)		ltq_r32(ltq_etop_membase + (x))
 #define ltq_etop_w32(x, y)	ltq_w32(x, ltq_etop_membase + (y))
@@ -198,12 +196,11 @@ ltq_etop_poll_tx(struct napi_struct *napi, int budget)
 }
 
 static irqreturn_t
-ltq_etop_dma_irq(int irq, void *_priv)
+ltq_etop_dma_irq(int irq, void *ptr)
 {
-	struct ltq_etop_priv *priv = _priv;
-	int ch = irq - LTQ_DMA_CH0_INT;
+	struct ltq_etop_chan *ch = ptr;
 
-	napi_schedule(&priv->ch[ch].napi);
+	napi_schedule(&ch->napi);
 	return IRQ_HANDLED;
 }
 
@@ -213,8 +210,10 @@ ltq_etop_free_channel(struct net_device *dev, struct ltq_etop_chan *ch)
 	struct ltq_etop_priv *priv = netdev_priv(dev);
 
 	ltq_dma_free(&ch->dma);
-	if (ch->dma.irq)
+	if (ch->dma.irq > 0) {
+		printk(KERN_ERR "%s: free irq #%d\n", __func__, ch->dma.irq);
 		free_irq(ch->dma.irq, priv);
+	}
 	if (IS_RX(ch->idx)) {
 		struct ltq_dma_channel *dma = &ch->dma;
 
@@ -231,6 +230,7 @@ ltq_etop_hw_exit(struct net_device *dev)
 
 	ltq_pmu_disable(PMU_PPE);
 	for (i = 0; i < MAX_DMA_CHAN; i++)
+		/* TODO: Replace check with better */
 		if (IS_TX(i) || IS_RX(i))
 			ltq_etop_free_channel(dev, &priv->ch[i]);
 }
@@ -267,20 +267,23 @@ ltq_etop_hw_init(struct net_device *dev)
 	ltq_dma_init_port(DMA_PORT_ETOP, priv->tx_burst_len, priv->rx_burst_len);
 
 	for (i = 0; i < MAX_DMA_CHAN; i++) {
-		int irq = LTQ_DMA_CH0_INT + i;
 		struct ltq_etop_chan *ch = &priv->ch[i];
 
 		ch->dma.nr = i;
 		ch->idx = ch->dma.nr;
 		ch->dma.dev = &priv->pdev->dev;
 
+		if (ch->dma.irq < 0)
+			continue;
+
 		if (IS_TX(i)) {
 			ltq_dma_alloc_tx(&ch->dma);
-			err = request_irq(irq, ltq_etop_dma_irq, 0, "etop_tx", priv);
+			err = request_irq(ch->dma.irq, ltq_etop_dma_irq, 0,
+					  "etop_tx", ch);
 			if (err) {
 				netdev_err(dev,
 					   "Unable to get Tx DMA IRQ %d\n",
-					   irq);
+					   ch->dma.irq);
 				return err;
 			}
 		} else if (IS_RX(i)) {
@@ -290,15 +293,15 @@ ltq_etop_hw_init(struct net_device *dev)
 				if (ltq_etop_alloc_skb(ch))
 					return -ENOMEM;
 			ch->dma.desc = 0;
-			err = request_irq(irq, ltq_etop_dma_irq, 0, "etop_rx", priv);
+			err = request_irq(ch->dma.irq, ltq_etop_dma_irq, 0,
+					  "etop_rx", ch);
 			if (err) {
 				netdev_err(dev,
 					   "Unable to get Rx DMA IRQ %d\n",
-					   irq);
+					   ch->dma.irq);
 				return err;
 			}
 		}
-		ch->dma.irq = irq;
 	}
 	return 0;
 }
@@ -439,8 +442,9 @@ ltq_etop_open(struct net_device *dev)
 	for (i = 0; i < MAX_DMA_CHAN; i++) {
 		struct ltq_etop_chan *ch = &priv->ch[i];
 
-		if (!IS_TX(i) && (!IS_RX(i)))
+		if (ch->dma.irq < 0)
 			continue;
+
 		ltq_dma_open(&ch->dma);
 		ltq_dma_enable_irq(&ch->dma);
 		napi_enable(&ch->napi);
@@ -461,8 +465,9 @@ ltq_etop_stop(struct net_device *dev)
 	for (i = 0; i < MAX_DMA_CHAN; i++) {
 		struct ltq_etop_chan *ch = &priv->ch[i];
 
-		if (!IS_RX(i) && !IS_TX(i))
+		if (ch->dma.irq < 0)
 			continue;
+
 		napi_disable(&ch->napi);
 		ltq_dma_close(&ch->dma);
 	}
@@ -644,7 +649,7 @@ ltq_etop_probe(struct platform_device *pdev)
 	struct net_device *dev;
 	struct ltq_etop_priv *priv;
 	struct resource *res;
-	int err;
+	int err, rxq, txq;
 	int i;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -686,6 +691,33 @@ ltq_etop_probe(struct platform_device *pdev)
 	spin_lock_init(&priv->lock);
 	SET_NETDEV_DEV(dev, &pdev->dev);
 
+	rxq = 0;
+	txq = 0;
+	for (i = 0; i < MAX_DMA_CHAN; i++) {
+		char chan[4];
+
+		snprintf(chan, sizeof(chan), "%s%d", (i % 2) ? "tx" : "rx",
+			 (i / 2));
+		priv->ch[i].dma.irq = platform_get_irq_byname_optional(pdev,
+								       chan);
+		if (priv->ch[i].dma.irq < 0)
+			continue;
+
+		if (IS_TX(i))
+			txq++;
+		else if (IS_RX(i))
+			rxq++;
+	}
+
+	if (txq < 1) {
+		dev_err(&pdev->dev, "at least one TX interrupt is required\n");
+		return -ENOENT;
+	}
+	if (rxq < 1) {
+		dev_err(&pdev->dev, "at least one RX interrupt is required\n");
+		return -ENOENT;
+	}
+
 	err = device_property_read_u32(&pdev->dev, "lantiq,tx-burst-length", &priv->tx_burst_len);
 	if (err < 0) {
 		dev_err(&pdev->dev, "unable to read tx-burst-length property\n");
@@ -699,6 +731,9 @@ ltq_etop_probe(struct platform_device *pdev)
 	}
 
 	for (i = 0; i < MAX_DMA_CHAN; i++) {
+		if (priv->ch[i].dma.irq < 0)
+			continue;
+
 		if (IS_TX(i))
 			netif_napi_add_weight(dev, &priv->ch[i].napi,
 					      ltq_etop_poll_tx, 8);
