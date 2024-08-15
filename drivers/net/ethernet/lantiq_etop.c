@@ -762,8 +762,8 @@ static void ltq_etop_remove(struct platform_device *pdev)
 
 	if (dev) {
 		netif_tx_stop_all_queues(dev);
-		ltq_etop_hw_exit(dev);
 		ltq_etop_mdio_cleanup(dev);
+		ltq_etop_hw_exit(dev);
 		unregister_netdev(dev);
 	}
 }
