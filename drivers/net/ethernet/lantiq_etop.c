@@ -428,7 +428,6 @@ ltq_etop_mdio_cleanup(struct net_device *dev)
 {
 	struct ltq_etop_priv *priv = netdev_priv(dev);
 
-	phy_disconnect(dev->phydev);
 	mdiobus_unregister(priv->mii_bus);
 	mdiobus_free(priv->mii_bus);
 }
@@ -462,6 +461,7 @@ ltq_etop_stop(struct net_device *dev)
 
 	netif_tx_stop_all_queues(dev);
 	phy_stop(dev->phydev);
+	phy_disconnect(dev->phydev);
 	for (i = 0; i < MAX_DMA_CHAN; i++) {
 		struct ltq_etop_chan *ch = &priv->ch[i];
 
