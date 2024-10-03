@@ -207,12 +207,12 @@ ltq_etop_dma_irq(int irq, void *ptr)
 static void
 ltq_etop_free_channel(struct net_device *dev, struct ltq_etop_chan *ch)
 {
-	struct ltq_etop_priv *priv = netdev_priv(dev);
+//	struct ltq_etop_priv *priv = netdev_priv(dev);
 
 	ltq_dma_free(&ch->dma);
 	if (ch->dma.irq > 0) {
 		printk(KERN_ERR "%s: free irq #%d\n", __func__, ch->dma.irq);
-		free_irq(ch->dma.irq, priv);
+//		free_irq(ch->dma.irq, priv);
 	}
 	if (IS_RX(ch->idx)) {
 		struct ltq_dma_channel *dma = &ch->dma;
