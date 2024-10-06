@@ -25,6 +25,7 @@
 #include <linux/io.h>
 #include <linux/dma-mapping.h>
 #include <linux/module.h>
+#include <linux/of_irq.h>
 #include <linux/of_platform.h>
 
 #include <asm/checksum.h>
@@ -67,12 +68,6 @@
 #define ETOP_PLEN_UNDER		0x40
 #define ETOP_CFG_MII0		0x01
 
-/* use 2 static channels for TX/RX */
-#define LTQ_ETOP_TX_CHANNEL	1
-#define LTQ_ETOP_RX_CHANNEL	6
-#define IS_TX(x)		(x == LTQ_ETOP_TX_CHANNEL)
-#define IS_RX(x)		(x == LTQ_ETOP_RX_CHANNEL)
-
 #define ETOP_CFG_MASK           0xfff
 #define ETOP_CFG_FEN0		(1 << 8)
 #define ETOP_CFG_SEN0		(1 << 6)
@@ -93,8 +88,8 @@
 static void __iomem *ltq_etop_membase;
 
 struct ltq_etop_chan {
-	int idx;
 	int tx_free;
+	int irq;
 	struct net_device *netdev;
 	struct napi_struct napi;
 	struct ltq_dma_channel dma;
@@ -109,8 +104,12 @@ struct ltq_etop_priv {
 
 	struct mii_bus *mii_bus;
 
-	struct ltq_etop_chan ch[MAX_DMA_CHAN];
+	struct ltq_etop_chan txch;
+	struct ltq_etop_chan rxch;
 	int tx_free[MAX_DMA_CHAN >> 1];
+
+	int tx_irq;
+	int rx_irq;
 
 	int tx_burst_len;
 	int rx_burst_len;
@@ -227,9 +226,10 @@ static irqreturn_t
 ltq_etop_dma_irq(int irq, void *_priv)
 {
 	struct ltq_etop_priv *priv = _priv;
-	int ch = irq - LTQ_DMA_CH0_INT;
-
-	napi_schedule(&priv->ch[ch].napi);
+	if (irq == priv->txch.dma.irq)
+		napi_schedule(&priv->txch.napi);
+	else
+		napi_schedule(&priv->rxch.napi);
 	return IRQ_HANDLED;
 }
 
@@ -241,7 +241,7 @@ ltq_etop_free_channel(struct net_device *dev, struct ltq_etop_chan *ch)
 	ltq_dma_free(&ch->dma);
 	if (ch->dma.irq)
 		free_irq(ch->dma.irq, priv);
-	if (IS_RX(ch->idx)) {
+	if (ch == &priv->txch) {
 		int desc;
 		for (desc = 0; desc < LTQ_DESC_NUM; desc++)
 			dev_kfree_skb_any(ch->skb[ch->dma.desc]);
@@ -252,12 +252,11 @@ static void
 ltq_etop_hw_exit(struct net_device *dev)
 {
 	struct ltq_etop_priv *priv = netdev_priv(dev);
-	int i;
 
 	ltq_pmu_disable(PMU_PPE);
-	for (i = 0; i < MAX_DMA_CHAN; i++)
-		if (IS_TX(i) || IS_RX(i))
-			ltq_etop_free_channel(dev, &priv->ch[i]);
+
+	ltq_etop_free_channel(dev, &priv->txch);
+	ltq_etop_free_channel(dev, &priv->rxch);
 }
 
 static int
@@ -304,32 +303,41 @@ static int
 ltq_etop_dma_init(struct net_device *dev)
 {
 	struct ltq_etop_priv *priv = netdev_priv(dev);
-	int i;
+	int tx = priv->tx_irq - LTQ_DMA_ETOP;
+	int rx = priv->rx_irq - LTQ_DMA_ETOP;
+	int err;
 
 	ltq_dma_init_port(DMA_PORT_ETOP, priv->tx_burst_len, priv->rx_burst_len);
 
-	for (i = 0; i < MAX_DMA_CHAN; i++) {
-		int irq = LTQ_DMA_CH0_INT + i;
-		struct ltq_etop_chan *ch = &priv->ch[i];
-
-		ch->idx = ch->dma.nr = i;
-		ch->dma.dev = &priv->pdev->dev;
-
-		if (IS_TX(i)) {
-			ltq_dma_alloc_tx(&ch->dma);
-			request_irq(irq, ltq_etop_dma_irq, 0, "etop_tx", priv);
-		} else if (IS_RX(i)) {
-			ltq_dma_alloc_rx(&ch->dma);
-			for (ch->dma.desc = 0; ch->dma.desc < LTQ_DESC_NUM;
-					ch->dma.desc++)
-				if (ltq_etop_alloc_skb(ch))
-					return -ENOMEM;
-			ch->dma.desc = 0;
-			request_irq(irq, ltq_etop_dma_irq, 0, "etop_rx", priv);
-		}
-		ch->dma.irq = irq;
+	priv->txch.dma.nr = tx;
+	priv->txch.dma.dev = &priv->pdev->dev;
+	ltq_dma_alloc_tx(&priv->txch.dma);
+	err = request_irq(priv->tx_irq, ltq_etop_dma_irq, 0, "eth_tx", priv);
+	if (err) {
+		netdev_err(dev, "failed to allocate tx irq\n");
+		goto err_out;
 	}
-	return 0;
+	priv->txch.dma.irq = priv->tx_irq;
+
+	priv->rxch.dma.nr = rx;
+	priv->rxch.dma.dev = &priv->pdev->dev;
+	ltq_dma_alloc_rx(&priv->rxch.dma);
+	for (priv->rxch.dma.desc = 0; priv->rxch.dma.desc < LTQ_DESC_NUM;
+			priv->rxch.dma.desc++) {
+		if (ltq_etop_alloc_skb(&priv->rxch)) {
+			netdev_err(dev, "failed to allocate skbs\n");
+			err = -ENOMEM;
+			goto err_out;
+		}
+	}
+	priv->rxch.dma.desc = 0;
+	err = request_irq(priv->rx_irq, ltq_etop_dma_irq, 0, "eth_rx", priv);
+	if (err)
+		netdev_err(dev, "failed to allocate rx irq\n");
+	else
+		priv->rxch.dma.irq = priv->rx_irq;
+err_out:
+	return err;
 }
 
 static void
@@ -467,19 +475,16 @@ ltq_etop_open(struct net_device *dev)
 {
 	struct ltq_etop_priv *priv = netdev_priv(dev);
 	unsigned long flags;
-	int i;
 
-	for (i = 0; i < MAX_DMA_CHAN; i++) {
-		struct ltq_etop_chan *ch = &priv->ch[i];
+	napi_enable(&priv->txch.napi);
+	napi_enable(&priv->rxch.napi);
 
-		if (!IS_TX(i) && (!IS_RX(i)))
-			continue;
-		napi_enable(&ch->napi);
-		spin_lock_irqsave(&priv->lock, flags);
-		ltq_dma_open(&ch->dma);
-		ltq_dma_enable_irq(&ch->dma);
-		spin_unlock_irqrestore(&priv->lock, flags);
-	}
+	spin_lock_irqsave(&priv->lock, flags);
+	ltq_dma_open(&priv->txch.dma);
+	ltq_dma_enable_irq(&priv->txch.dma);
+	ltq_dma_open(&priv->rxch.dma);
+	ltq_dma_enable_irq(&priv->rxch.dma);
+	spin_unlock_irqrestore(&priv->lock, flags);
 
 	if (dev->phydev)
 		phy_start(dev->phydev);
@@ -493,23 +498,17 @@ ltq_etop_stop(struct net_device *dev)
 {
 	struct ltq_etop_priv *priv = netdev_priv(dev);
 	unsigned long flags;
-	int i;
 
 	netif_tx_stop_all_queues(dev);
 	if (dev->phydev)
 		phy_stop(dev->phydev);
+	napi_disable(&priv->txch.napi);
+	napi_disable(&priv->rxch.napi);
 
-	for (i = 0; i < MAX_DMA_CHAN; i++) {
-		struct ltq_etop_chan *ch = &priv->ch[i];
-
-		if (!IS_RX(i) && !IS_TX(i))
-			continue;
-
-		napi_disable(&ch->napi);
-		spin_lock_irqsave(&priv->lock, flags);
-		ltq_dma_close(&ch->dma);
-		spin_unlock_irqrestore(&priv->lock, flags);
-	}
+	spin_lock_irqsave(&priv->lock, flags);
+	ltq_dma_close(&priv->txch.dma);
+	ltq_dma_close(&priv->rxch.dma);
+	spin_unlock_irqrestore(&priv->lock, flags);
 
 	return 0;
 }
@@ -520,15 +519,16 @@ ltq_etop_tx(struct sk_buff *skb, struct net_device *dev)
 	int queue = skb_get_queue_mapping(skb);
 	struct netdev_queue *txq = netdev_get_tx_queue(dev, queue);
 	struct ltq_etop_priv *priv = netdev_priv(dev);
-	struct ltq_etop_chan *ch = &priv->ch[(queue << 1) | 1];
-	struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
+	struct ltq_dma_desc *desc =
+		&priv->txch.dma.desc_base[priv->txch.dma.desc];
 	unsigned long flags;
 	u32 byte_offset;
 	int len;
 
 	len = skb->len < ETH_ZLEN ? ETH_ZLEN : skb->len;
 
-	if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) || ch->skb[ch->dma.desc]) {
+	if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) ||
+			priv->txch.skb[priv->txch.dma.desc]) {
 		netdev_err(dev, "tx ring full\n");
 		netif_tx_stop_queue(txq);
 		return NETDEV_TX_BUSY;
@@ -536,7 +536,7 @@ ltq_etop_tx(struct sk_buff *skb, struct net_device *dev)
 
 	/* dma needs to start on a burst length value aligned address */
 	byte_offset = CPHYSADDR(skb->data) % (priv->tx_burst_len * 4);
-	ch->skb[ch->dma.desc] = skb;
+	priv->txch.skb[priv->txch.dma.desc] = skb;
 
 	netif_trans_update(dev);
 
@@ -546,11 +546,11 @@ ltq_etop_tx(struct sk_buff *skb, struct net_device *dev)
 	wmb();
 	desc->ctl = LTQ_DMA_OWN | LTQ_DMA_SOP | LTQ_DMA_EOP |
 		LTQ_DMA_TX_OFFSET(byte_offset) | (len & LTQ_DMA_SIZE_MASK);
-	ch->dma.desc++;
-	ch->dma.desc %= LTQ_DESC_NUM;
+	priv->txch.dma.desc++;
+	priv->txch.dma.desc %= LTQ_DESC_NUM;
 	spin_unlock_irqrestore(&priv->lock, flags);
 
-	if (ch->dma.desc_base[ch->dma.desc].ctl & LTQ_DMA_OWN)
+	if (priv->txch.dma.desc_base[priv->txch.dma.desc].ctl & LTQ_DMA_OWN)
 		netif_tx_stop_queue(txq);
 
 	return NETDEV_TX_OK;
@@ -691,9 +691,14 @@ static int ltq_etop_probe(struct platform_device *pdev)
 {
 	struct net_device *dev;
 	struct ltq_etop_priv *priv;
-	struct resource *res;
+	struct resource *res, irqres[2];
 	int err;
-	int i;
+
+	err = of_irq_to_resource_table(pdev->dev.of_node, irqres, 2);
+	if (err != 2) {
+		dev_err(&pdev->dev, "failed to get etop irqs\n");
+		return -EINVAL;
+	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
@@ -727,6 +732,8 @@ static int ltq_etop_probe(struct platform_device *pdev)
 	priv->pdev = pdev;
 	priv->pldata = dev_get_platdata(&pdev->dev);
 	priv->netdev = dev;
+	priv->tx_irq = irqres[0].start;
+	priv->rx_irq = irqres[1].start;
 
 	spin_lock_init(&priv->lock);
 	SET_NETDEV_DEV(dev, &pdev->dev);
@@ -743,15 +750,10 @@ static int ltq_etop_probe(struct platform_device *pdev)
 		return err;
 	}
 
-	for (i = 0; i < MAX_DMA_CHAN; i++) {
-		if (IS_TX(i))
-			netif_napi_add(dev, &priv->ch[i].napi,
-				ltq_etop_poll_tx, 8);
-		else if (IS_RX(i))
-			netif_napi_add(dev, &priv->ch[i].napi,
-				ltq_etop_poll_rx, 32);
-		priv->ch[i].netdev = dev;
-	}
+	netif_napi_add(dev, &priv->txch.napi, ltq_etop_poll_tx, 8);
+	netif_napi_add(dev, &priv->rxch.napi, ltq_etop_poll_rx, 32);
+	priv->txch.netdev = dev;
+	priv->rxch.netdev = dev;
 
 	err = register_netdev(dev);
 	if (err)
