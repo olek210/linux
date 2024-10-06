@@ -4,30 +4,30 @@
  *   Copyright (C) 2011 John Crispin <blogic@openwrt.org>
  */
 
-#include <linux/kernel.h>
-#include <linux/slab.h>
-#include <linux/errno.h>
-#include <linux/types.h>
+//#include <linux/kernel.h>
+//#include <linux/slab.h>
+//#include <linux/errno.h>
+//#include <linux/types.h>
 #include <linux/interrupt.h>
-#include <linux/uaccess.h>
-#include <linux/in.h>
+//#include <linux/uaccess.h>
+//#include <linux/in.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/phy.h>
-#include <linux/ip.h>
-#include <linux/tcp.h>
-#include <linux/skbuff.h>
-#include <linux/mm.h>
+//#include <linux/ip.h>
+//#include <linux/tcp.h>
+//#include <linux/skbuff.h>
+//#include <linux/mm.h>
 #include <linux/platform_device.h>
-#include <linux/ethtool.h>
-#include <linux/init.h>
-#include <linux/delay.h>
-#include <linux/io.h>
-#include <linux/dma-mapping.h>
-#include <linux/module.h>
+//#include <linux/ethtool.h>
+//#include <linux/init.h>
+//#include <linux/delay.h>
+//#include <linux/io.h>
+//#include <linux/dma-mapping.h>
+//#include <linux/module.h>
 #include <linux/property.h>
 
-#include <asm/checksum.h>
+//#include <asm/checksum.h>
 
 #include <lantiq_soc.h>
 #include <xway_dma.h>
