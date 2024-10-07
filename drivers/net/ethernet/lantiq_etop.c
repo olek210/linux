@@ -221,9 +221,7 @@ ltq_etop_poll_rx(struct napi_struct *napi, int budget)
 {
 	struct ltq_etop_chan *ch = container_of(napi,
 				struct ltq_etop_chan, napi);
-	struct ltq_etop_priv *priv = netdev_priv(ch->netdev);
 	int work_done = 0;
-	unsigned long flags;
 
 	while (work_done < budget) {
 		struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
@@ -234,10 +232,8 @@ ltq_etop_poll_rx(struct napi_struct *napi, int budget)
 		work_done++;
 	}
 	if (work_done < budget) {
-		napi_complete_done(&ch->napi, work_done);
-		spin_lock_irqsave(&priv->lock, flags);
-		ltq_dma_ack_irq(&ch->dma);
-		spin_unlock_irqrestore(&priv->lock, flags);
+		if (napi_complete_done(&ch->napi, work_done))
+			ltq_dma_enable_irq(&ch->dma);
 	}
 	return work_done;
 }
@@ -247,14 +243,15 @@ ltq_etop_poll_tx(struct napi_struct *napi, int budget)
 {
 	struct ltq_etop_chan *ch =
 		container_of(napi, struct ltq_etop_chan, napi);
-	struct ltq_etop_priv *priv = netdev_priv(ch->netdev);
 	struct netdev_queue *txq =
 		netdev_get_tx_queue(ch->netdev, ch->dma.nr >> 1);
-	unsigned long flags;
+	int pkts = 0;
 
-	spin_lock_irqsave(&priv->lock, flags);
-	while ((ch->dma.desc_base[ch->tx_free].ctl &
-			(LTQ_DMA_OWN | LTQ_DMA_C)) == LTQ_DMA_C) {
+	__netif_tx_lock(txq, smp_processor_id());
+	while (pkts < budget) {
+		if ((ch->dma.desc_base[ch->tx_free].ctl &
+				(LTQ_DMA_OWN | LTQ_DMA_C)) != LTQ_DMA_C)
+			break;
 		ch->netdev->stats.tx_packets++;
 		ch->netdev->stats.tx_bytes += ch->skb[ch->tx_free]->len;
 		dev_kfree_skb_any(ch->skb[ch->tx_free]);
@@ -264,14 +261,15 @@ ltq_etop_poll_tx(struct napi_struct *napi, int budget)
 		ch->tx_free++;
 		ch->tx_free %= LTQ_DESC_NUM;
 	}
-	spin_unlock_irqrestore(&priv->lock, flags);
 
+	__netif_tx_unlock(txq);
 	if (netif_tx_queue_stopped(txq))
 		netif_tx_start_queue(txq);
-	napi_complete(&ch->napi);
-	spin_lock_irqsave(&priv->lock, flags);
-	ltq_dma_ack_irq(&ch->dma);
-	spin_unlock_irqrestore(&priv->lock, flags);
+
+	if (pkts < budget) {
+		if (napi_complete_done(&ch->napi, pkts))
+			ltq_dma_enable_irq(&ch->dma);
+	}
 	return 1;
 }
 
@@ -280,10 +278,20 @@ ltq_etop_dma_irq(int irq, void *_priv)
 {
 	struct ltq_etop_priv *priv = _priv;
 
-	if (irq == priv->txch.dma.irq)
-		napi_schedule(&priv->txch.napi);
-	else
-		napi_schedule(&priv->rxch.napi);
+	if (irq == priv->txch.dma.irq) {
+		if (napi_schedule_prep(&priv->txch.napi)) {
+			ltq_dma_disable_irq(&priv->txch.dma);
+				__napi_schedule(&priv->txch.napi);
+		}
+		ltq_dma_ack_irq(&priv->txch.dma);
+	} else {
+		if (napi_schedule_prep(&priv->rxch.napi)) {
+			ltq_dma_disable_irq(&priv->rxch.dma);
+				__napi_schedule(&priv->rxch.napi);
+		}
+		ltq_dma_ack_irq(&priv->rxch.dma);
+	}
+
 	return IRQ_HANDLED;
 }
 
