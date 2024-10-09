@@ -113,6 +113,8 @@ ltq_etop_alloc_skb(struct ltq_etop_chan *ch)
 	ch->dma.desc_base[ch->dma.desc].addr =
 		dma_map_single(&priv->pdev->dev, ch->skb[ch->dma.desc]->data,
 			       MAX_DMA_DATA_LEN, DMA_FROM_DEVICE);
+	if (unlikely(dma_mapping_error(&priv->pdev->dev, ch->dma.desc_base[ch->dma.desc].addr)))
+		printk(KERN_ERR "%s: rx mapping error\n", __func__);
 	ch->dma.desc_base[ch->dma.desc].addr =
 		CPHYSADDR(ch->skb[ch->dma.desc]->data);
 	ch->dma.desc_base[ch->dma.desc].ctl =
@@ -500,6 +502,8 @@ ltq_etop_tx(struct sk_buff *skb, struct net_device *dev)
 	spin_lock_irqsave(&priv->lock, flags);
 	desc->addr = ((unsigned int)dma_map_single(&priv->pdev->dev, skb->data, len,
 						DMA_TO_DEVICE)) - byte_offset;
+	if (unlikely(dma_mapping_error(&priv->pdev->dev, mapping)))
+		printk(KERN_ERR "%s: tx mapping error\n", __func__);
 	/* Make sure the address is written before we give it to HW */
 	wmb();
 	desc->ctl = LTQ_DMA_OWN | LTQ_DMA_SOP | LTQ_DMA_EOP |
