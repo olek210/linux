@@ -609,6 +609,7 @@ enum spd_duplex {
 	FORCE_100M_FULL,
 	FORCE_1000M_FULL,
 	NWAY_2500M_FULL,
+	NWAY_5000M_FULL,
 };
 
 /* OCP_ALDPS_CONFIG */
@@ -730,6 +731,7 @@ enum spd_duplex {
 #define BP4_SUPER_ONLY		0x1578	/* RTL_VER_04 only */
 
 enum rtl_register_content {
+	_5000bps	= BIT(12),
 	_2500bps	= BIT(10),
 	_1250bps	= BIT(9),
 	_500bps		= BIT(8),
@@ -948,6 +950,7 @@ struct r8152 {
 	unsigned int pipe_in, pipe_out, pipe_intr, pipe_ctrl_in, pipe_ctrl_out;
 
 	u32 support_2500full:1;
+	u32 support_5000full:1;
 	u32 lenovo_macpassthru:1;
 	u32 dell_tb_rx_agg_bug:1;
 	u16 ocp_base;
@@ -1181,6 +1184,9 @@ enum rtl_version {
 	RTL_VER_14,
 	RTL_VER_15,
 
+	RTL_TEST_02,
+	RTL_VER_17,
+
 	RTL_VER_MAX
 };
 
@@ -1197,6 +1203,7 @@ enum tx_csum_stat {
 #define RTL_ADVERTISED_1000_HALF		BIT(4)
 #define RTL_ADVERTISED_1000_FULL		BIT(5)
 #define RTL_ADVERTISED_2500_FULL		BIT(6)
+#define RTL_ADVERTISED_5000_FULL		BIT(7)
 
 /* Maximum number of multicast addresses to filter (vs. Rx-all-multicast).
  * The RTL chips use a 64 element hash table based on the Ethernet CRC.
@@ -2998,6 +3005,12 @@ static void rtl8152_nic_reset(struct r8152 *tp)
 		ocp_write_word(tp, MCU_TYPE_USB, USB_USB_CTRL, ocp_data);
 		break;
 
+	case RTL_VER_17:
+		ocp_data = ocp_read_byte(tp, MCU_TYPE_PLA, PLA_CR);
+		ocp_data &= ~ (CR_TE | CR_RE);
+		ocp_write_byte(tp, MCU_TYPE_PLA, PLA_CR, ocp_data);
+		break;
+
 	default:
 		ocp_write_byte(tp, MCU_TYPE_PLA, PLA_CR, CR_RST);
 
@@ -3236,6 +3249,7 @@ static void r8153_set_rx_early_timeout(struct r8152 *tp)
 	case RTL_VER_12:
 	case RTL_VER_13:
 	case RTL_VER_15:
+	case RTL_VER_17:
 		ocp_write_word(tp, MCU_TYPE_USB, USB_RX_EARLY_TIMEOUT,
 			       640 / 8);
 		ocp_write_word(tp, MCU_TYPE_USB, USB_RX_EXTRA_AGGR_TMR,
@@ -3273,6 +3287,11 @@ static void r8153_set_rx_early_size(struct r8152 *tp)
 	case RTL_VER_15:
 		ocp_write_word(tp, MCU_TYPE_USB, USB_RX_EARLY_SIZE,
 			       ocp_data / 8);
+		break;
+	case RTL_TEST_02:
+	case RTL_VER_17:
+		ocp_write_word(tp, MCU_TYPE_USB, USB_RX_EARLY_SIZE,
+			       ocp_data / 16);
 		break;
 	default:
 		WARN_ON_ONCE(1);
@@ -3399,6 +3418,7 @@ static void rtl_rx_vlan_en(struct r8152 *tp, bool enable)
 	case RTL_VER_12:
 	case RTL_VER_13:
 	case RTL_VER_15:
+	case RTL_VER_17:
 	default:
 		ocp_data = ocp_read_word(tp, MCU_TYPE_PLA, PLA_RCR1);
 		if (enable)
@@ -4101,6 +4121,7 @@ static void r8153_teredo_off(struct r8152 *tp)
 	case RTL_VER_13:
 	case RTL_VER_14:
 	case RTL_VER_15:
+	case RTL_VER_17:
 	default:
 		/* The bit 0 ~ 7 are relative with teredo settings. They are
 		 * W1C (write 1 to clear), so set all 1 to disable it.
@@ -4123,6 +4144,7 @@ static void rtl_reset_bmu(struct r8152 *tp)
 	ocp_write_byte(tp, MCU_TYPE_USB, USB_BMU_RESET, ocp_data);
 	ocp_data |= BMU_RESET_EP_IN | BMU_RESET_EP_OUT;
 	ocp_write_byte(tp, MCU_TYPE_USB, USB_BMU_RESET, ocp_data);
+	/* TODO: RTL_VER_17 */
 }
 
 /* Clear the bp to stop the firmware before loading a new one */
@@ -4157,6 +4179,7 @@ static void rtl_clear_bp(struct r8152 *tp, u16 type)
 		bp_num = 8;
 		break;
 	case RTL_VER_14:
+	case RTL_VER_17:
 	default:
 		ocp_write_word(tp, type, USB_BP2_EN, 0);
 		bp_num = 16;
@@ -5477,6 +5500,9 @@ static void rtl_eee_enable(struct r8152 *tp, bool enable)
 			ocp_reg_write(tp, OCP_EEE_ADV, 0);
 		}
 		break;
+	case RTL_VER_17:
+		/* TODO: RTL_VER_17 */
+		break;
 	default:
 		break;
 	}
@@ -6329,6 +6355,9 @@ static int rtl8152_set_speed(struct r8152 *tp, u8 autoneg, u32 speed, u8 duplex,
 
 			if (tp->support_2500full)
 				support |= RTL_ADVERTISED_2500_FULL;
+
+			if (tp->support_5000full)
+				support |= RTL_ADVERTISED_5000_FULL;
 		}
 
 		if (!(advertising & support))
@@ -6374,13 +6403,18 @@ static int rtl8152_set_speed(struct r8152 *tp, u8 autoneg, u32 speed, u8 duplex,
 				r8152_mdio_write(tp, MII_CTRL1000, new1);
 		}
 
-		if (tp->support_2500full) {
+		if (tp->support_2500full || tp->support_5000full) {
 			orig = ocp_reg_read(tp, OCP_10GBT_CTRL);
 			new1 = orig & ~MDIO_AN_10GBT_CTRL_ADV2_5G;
 
 			if (advertising & RTL_ADVERTISED_2500_FULL) {
 				new1 |= MDIO_AN_10GBT_CTRL_ADV2_5G;
 				tp->ups_info.speed_duplex = NWAY_2500M_FULL;
+			}
+
+			if (advertising & RTL_ADVERTISED_5000_FULL) {
+				new1 |= MDIO_AN_10GBT_CTRL_ADV5G;
+				tp->ups_info.speed_duplex = NWAY_5000M_FULL;
 			}
 
 			if (orig != new1)
@@ -8871,6 +8905,10 @@ static int rtl8152_set_link_ksettings(struct net_device *dev,
 		     cmd->link_modes.advertising))
 		advertising |= RTL_ADVERTISED_2500_FULL;
 
+	if (test_bit(ETHTOOL_LINK_MODE_5000baseT_Full_BIT,
+		     cmd->link_modes.advertising))
+		advertising |= RTL_ADVERTISED_5000_FULL;
+
 	mutex_lock(&tp->control);
 
 	ret = rtl8152_set_speed(tp, cmd->base.autoneg, cmd->base.speed,
@@ -9602,6 +9640,26 @@ static int rtl_ops_init(struct r8152 *tp)
 		tp->eee_adv		= MDIO_EEE_1000T | MDIO_EEE_100TX;
 		break;
 
+	case RTL_VER_17:
+		tp->support_2500full	= 1;
+		tp->support_5000full	= 1;
+		tp->eee_en		= true;
+		tp->eee_adv		= MDIO_EEE_1000T | MDIO_EEE_100TX;
+		ops->init		= r8157_init;
+		ops->enable		= rtl8157_enable;
+		ops->disable		= rtl8153_disable;
+		ops->up			= rtl8157_up;
+		ops->down		= rtl8157_down;
+		ops->unload		= rtl8157_unload;
+		ops->eee_get		= r8153_get_eee;
+		ops->eee_set		= r8152_set_eee;
+		ops->in_nway		= rtl8153_in_nway;
+		ops->hw_phy_cfg		= r8157_hw_phy_cfg;
+		ops->autosuspend_en	= rtl817_runtime_enable;
+		ops->change_mtu		= rtl817_change_mtu;
+		tp->rx_buf_sz		= 32 * 1024;
+		break;
+
 	default:
 		ret = -ENODEV;
 		dev_err(&tp->intf->dev, "Unknown Device\n");
@@ -9752,6 +9810,9 @@ static u8 __rtl_get_hw_ver(struct usb_device *udev)
 	case 0x7420:
 		version = RTL_VER_15;
 		break;
+	case 0x1030:
+		version = RTL_VER_17
+		break
 	default:
 		version = RTL_VER_UNKNOWN;
 		dev_info(&udev->dev, "Unknown version 0x%04x\n", ocp_data);
@@ -9902,6 +9963,7 @@ static int rtl8152_probe_once(struct usb_interface *intf,
 	case RTL_VER_12:
 	case RTL_VER_13:
 	case RTL_VER_15:
+	case RTL_VER_17:
 		netdev->max_mtu = size_to_mtu(16 * 1024);
 		break;
 	case RTL_VER_01:
@@ -9924,10 +9986,16 @@ static int rtl8152_probe_once(struct usb_interface *intf,
 	tp->advertising = RTL_ADVERTISED_10_HALF | RTL_ADVERTISED_10_FULL |
 			  RTL_ADVERTISED_100_HALF | RTL_ADVERTISED_100_FULL;
 	if (tp->mii.supports_gmii) {
-		if (tp->support_2500full &&
-		    tp->udev->speed >= USB_SPEED_SUPER) {
-			tp->speed = SPEED_2500;
-			tp->advertising |= RTL_ADVERTISED_2500_FULL;
+		if (tp->udev->speed >= USB_SPEED_SUPER) {
+			if (tp->support_2500full) {
+				tp->speed = SPEED_2500;
+				tp->advertising |= RTL_ADVERTISED_2500_FULL;
+			}
+
+			if (tp->support_5000full) {
+				tp->speed = SPEED_5000;
+				tp->advertising |= RTL_ADVERTISED_5000_FULL;
+			}
 		} else {
 			tp->speed = SPEED_1000;
 		}
@@ -10057,6 +10125,7 @@ static const struct usb_device_id rtl8152_table[] = {
 	{ USB_DEVICE(VENDOR_ID_REALTEK, 0x8153) },
 	{ USB_DEVICE(VENDOR_ID_REALTEK, 0x8155) },
 	{ USB_DEVICE(VENDOR_ID_REALTEK, 0x8156) },
+	{ USB_DEVICE(VENDOR_ID_REALTEK, 0x8157) },
 
 	/* Microsoft */
 	{ USB_DEVICE(VENDOR_ID_MICROSOFT, 0x07ab) },
