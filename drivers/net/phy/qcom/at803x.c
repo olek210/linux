@@ -730,6 +730,8 @@ static int at8031_sfp_insert(void *upstream, const struct sfp_eeprom_id *id)
 	DECLARE_PHY_INTERFACE_MASK(interfaces);
 	phy_interface_t iface;
 
+	printk(KERN_INFO "%s: 1\n", __func__);
+
 	linkmode_zero(phy_support);
 	phylink_set(phy_support, 1000baseX_Full);
 	phylink_set(phy_support, 1000baseT_Full);
@@ -737,6 +739,7 @@ static int at8031_sfp_insert(void *upstream, const struct sfp_eeprom_id *id)
 	phylink_set(phy_support, Pause);
 	phylink_set(phy_support, Asym_Pause);
 
+	printk(KERN_INFO "%s: 2\n", __func__);
 	linkmode_zero(sfp_support);
 	sfp_parse_support(phydev->sfp_bus, id, sfp_support, interfaces);
 	/* Some modules support 10G modes as well as others we support.
@@ -744,11 +747,14 @@ static int at8031_sfp_insert(void *upstream, const struct sfp_eeprom_id *id)
 	 */
 	linkmode_and(sfp_support, phy_support, sfp_support);
 
+	printk(KERN_INFO "%s: 3\n", __func__);
 	if (linkmode_empty(sfp_support)) {
+		printk(KERN_INFO "%s: 4\n", __func__);
 		dev_err(&phydev->mdio.dev, "incompatible SFP module inserted\n");
 		return -EINVAL;
 	}
 
+	printk(KERN_INFO "%s: 5\n", __func__);
 	iface = sfp_select_interface(phydev->sfp_bus, sfp_support);
 
 	/* Only 1000Base-X is supported by AR8031/8033 as the downstream SerDes
@@ -763,6 +769,7 @@ static int at8031_sfp_insert(void *upstream, const struct sfp_eeprom_id *id)
 	else if (iface != PHY_INTERFACE_MODE_1000BASEX)
 		return -EINVAL;
 
+	printk(KERN_INFO "%s: 7\n", __func__);
 	return 0;
 }
 
@@ -780,21 +787,26 @@ static int at8031_parse_dt(struct phy_device *phydev)
 	struct at803x_priv *priv = phydev->priv;
 	int ret;
 
+	printk(KERN_INFO "%s: 1\n", __func__);
 	if (of_property_read_bool(node, "qca,keep-pll-enabled"))
 		priv->flags |= AT803X_KEEP_PLL_ENABLED;
 
+	printk(KERN_INFO "%s: 2\n", __func__);
 	ret = at8031_register_regulators(phydev);
 	if (ret < 0)
 		return ret;
 
+	printk(KERN_INFO "%s: 3\n", __func__);
 	ret = devm_regulator_get_enable_optional(&phydev->mdio.dev,
 						 "vddio");
+	printk(KERN_INFO "%s: 4\n", __func__);
 	if (ret) {
 		phydev_err(phydev, "failed to get VDDIO regulator\n");
 		return ret;
 	}
 
 	/* Only AR8031/8033 support 1000Base-X for SFP modules */
+	printk(KERN_INFO "%s: 5\n", __func__);
 	return phy_sfp_probe(phydev, &at8031_sfp_ops);
 }
 
@@ -815,6 +827,7 @@ static int at8031_probe(struct phy_device *phydev)
 	 * options.
 	 */
 	ret = at8031_parse_dt(phydev);
+	printk(KERN_INFO "%s:1 ret=%d\n", __func__, ret);
 	if (ret)
 		return ret;
 
@@ -826,10 +839,12 @@ static int at8031_probe(struct phy_device *phydev)
 	switch (mode_cfg) {
 	case AT803X_MODE_CFG_BX1000_RGMII_50OHM:
 	case AT803X_MODE_CFG_BX1000_RGMII_75OHM:
+		printk(KERN_INFO "%s: basex enables\n", __func__);
 		priv->is_1000basex = true;
 		fallthrough;
 	case AT803X_MODE_CFG_FX100_RGMII_50OHM:
 	case AT803X_MODE_CFG_FX100_RGMII_75OHM:
+		printk(KERN_INFO "%s: fiber enables\n", __func__);
 		priv->is_fiber = true;
 		break;
 	}
